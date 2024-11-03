@@ -32,6 +32,8 @@ use crate::runc::runtime::vm_type::emulcc::VmCcEmul;
 use crate::runc::runtime::vm_type::tdx::VmTDX;
 #[cfg(feature = "snp")]
 use crate::runc::runtime::vm_type::sevsnp::VmSevSnp;
+#[cfg(target_arch = "aarch64")]
+use crate::runc::runtime::vm_type::realm::VmCcRealm;
 
 use super::super::super::elf_loader::*;
 use super::super::super::kvm_vcpu::*;
@@ -143,7 +145,8 @@ impl VirtualMachine {
             CCMode::TDX => VmTDX::init(Some(&args))?,
             #[cfg(feature = "snp")]
             CCMode::SevSnp => VmSevSnp::init(Some(&args))?,
-            #[allow(unreachable_patterns)]
+            #[cfg(target_arch = "aarch64")]
+            CCMode::Cca => VmCcRealm::init(Some(&args))?,
             _ => panic!("Unhandled type."),
         };
         let umask = Self::Umask();
@@ -189,7 +192,7 @@ impl VirtualMachine {
     ///  vCPU0 - Boot vCPU, prepares the enviroment for all the other vcpus.
     ///  Running order: Based on VmType::CCMode
     ///     RealmVM - All expect boot vCPU enter KVM in powered-off state.
-    ///         Boot vCPU boots after a certain delay to unsure others have called kvm_run.
+    ///         Boot vCPU boots afterwards, and wakes them up
     ///     SevSnp -
     ///     TDX -
     ///     Others - Boot vCPU runs first, prepares shared space infrastructure, then allows
@@ -203,6 +206,11 @@ impl VirtualMachine {
             CCMode::TDX => {
                 self.spawn_vm_vcpus(&mut threads, 0, self.vcpus.len(), tgid);
             }
+            #[cfg(target_arch = "aarch64")]
+            CCMode::Cca => {
+                self.spawn_vm_vcpus(&mut threads, 1, self.vcpus.len(), tgid);
+                self.spawn_vm_vcpus(&mut threads, 0, 1, tgid);
+            },
             _ =>  {
                 self.spawn_vm_vcpus(&mut threads, 0, 1, tgid);
                 syncmgr::SyncMgr::WaitShareSpaceReady();

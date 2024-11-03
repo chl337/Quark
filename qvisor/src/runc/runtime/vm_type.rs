@@ -17,6 +17,8 @@ pub mod noncc;
 pub mod emulcc;
 #[cfg(feature = "tdx")]
 pub mod tdx;
+#[cfg(target_arch = "aarch64")]
+pub mod realm;
 pub mod resources;
 #[cfg(feature = "snp")]
 pub mod sevsnp;

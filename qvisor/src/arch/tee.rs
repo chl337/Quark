@@ -78,7 +78,7 @@ pub mod util {
         let offset = match confidentiality_type {
             CCMode::None | CCMode::Normal | CCMode::TDX | CCMode::SevSnp =>
                 0,
-            CCMode::NormalEmu =>
+            CCMode::NormalEmu | CCMode::Cca =>
                 MemoryDef::UNIDENTICAL_MAPPING_OFFSET,
         };
         offset

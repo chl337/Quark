@@ -149,22 +149,24 @@ pub enum CCMode {
     NormalEmu,
     SevSnp,
     TDX,
+    Cca,
 }
 
 impl CCMode {
     pub fn from(value: u64) -> Self {
         match value {
-            0 | 5.. => CCMode::None,
+            0 | 6.. => CCMode::None,
             1 => CCMode::Normal,
             2 => CCMode::NormalEmu,
             3 => CCMode::SevSnp,
             4 => CCMode::TDX,
+            5 => CCMode::Cca,
         }
     }
 
     pub fn tee_backedup(cc_type: u64) -> bool {
         let res: bool = match Self::from(cc_type) {
-            CCMode::SevSnp | CCMode::TDX => { true },
+            CCMode::SevSnp | CCMode::TDX | CCMode::Cca => { true },
             _ => { false },
         };
         res

@@ -16,6 +16,14 @@
 #[cfg(feature = "snp")]
 #[path = "./x86_64/tee/sev_snp/mod.rs"]
 pub mod sev_snp;
+#[cfg(target_arch = "aarch64")]
+#[path = "./aarch64/tee/realm.rs"]
+pub mod realm;
+
+//NOTE: When x86 comes with its own implementation, we will
+//      remove the arch-guards inside the functions.
+#[cfg(target_arch = "aarch64")]
+use self::realm as _tee;
 
 use core::sync::atomic::{AtomicU8, Ordering};
 use lazy_static::lazy_static;
@@ -92,6 +100,10 @@ pub fn gpa_adjust_shared_bit(_address: &mut u64, _protect: bool) {
                     *_address &= encrypt_bit_mask - 1;
                 }
             },
+            #[cfg(target_arch = "aarch64")]
+            CCMode::Cca => {
+                _tee::ipa_adjust(_address, _protect);
+            },
             _ => {
                 todo!("Unhandled");
             }
@@ -116,6 +128,10 @@ pub fn guest_physical_address(ipa_address: u64) -> u64 {
                 let encrypt_bit_mask = sev_snp::C_BIT_MASK.load(Ordering::Acquire);
                 address_guest &= encrypt_bit_mask - 1;
             },
+            #[cfg(target_arch = "aarch64")]
+            CCMode::Cca => {
+                _tee::unset_shared_bit(&mut address_guest);
+            },
             _ => {
                 todo!("Unhandled");
             }
@@ -134,7 +150,7 @@ pub fn is_protected_address(gpa: u64) -> bool {
     if (gpa >= MemoryDef::FILE_MAP_OFFSET &&
         gpa < MemoryDef::FILE_MAP_OFFSET + MemoryDef::FILE_MAP_SIZE)
         || (gpa >= MemoryDef::GUEST_HOST_SHARED_HEAP_OFFSET &&
-        gpa < MemoryDef::GUEST_HOST_SHARED_HEAP_END) {
+        gpa < MemoryDef::GUEST_HOST_SHARED_HEAP_END  + MemoryDef::IO_HEAP_SIZE) {
             res = false;
     }
     res
@@ -143,17 +159,15 @@ pub fn is_protected_address(gpa: u64) -> bool {
 /// Usage: On aarch64-Realm - invoke Hypercall
 /// NOTE: Unstable signature - may change in the future.
 pub fn call_host(_hcall_type: u64, _arg1: u64, _arg2: u64, _arg3: u64, _arg4: u64) {
-        //
-        // Impliment according to architecture
-        //
+    #[cfg(target_arch = "aarch64")]
+    _tee::rsi::RsiHostCall::rsi_host_call(_hcall_type, _arg1, _arg2, _arg3, _arg4);
 }
 
 /// Entry call to the booting flow of other vCPUS.
 /// Internals are architecture depended.
 pub fn boot_others(_boot_help_data: u64, _vcpu_count: u64, _pc: u64) {
-        //
-        // Impliment according to architecture
-        //
+    #[cfg(target_arch = "aarch64")]
+    _tee::psci::cpu_on(_boot_help_data as *const u64, _vcpu_count, _pc);
 }
 
 lazy_static! {

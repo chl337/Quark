@@ -30,7 +30,7 @@ use kvm_ioctls::TDXExit;
 const KVM_MEMORY_ATTRIBUTE_PRIVATE: u64 = 1 << 3;
 
 pub struct Tdx<'a> {
-    kvm_exits_list: [VcpuExit<'a>; 2],
+    kvm_exits_list: [VcpuExit<'a>; 3],
     hypercalls_list: [u16; 2],
     pub cc_mode: CCMode,
     pub share_space_table_addr: Option<u64>,
@@ -49,6 +49,7 @@ impl ConfCompExtension for Tdx<'_> {
         let _self: Box<dyn ConfCompExtension> = Box::new(Tdx {
             kvm_exits_list: [
                 VcpuExit::TDXExit(kvm_ioctls::TDXExit::MapGpa(0, 0, unsafe { &mut DUMMY_U64 })),
+                VcpuExit::TDXExit(kvm_ioctls::TDXExit::GetQuote(0, 0, unsafe { &mut DUMMY_U64 })),
                 VcpuExit::MemoryFault(0, 0, true),
             ],
             hypercalls_list: [
@@ -256,6 +257,9 @@ impl Tdx<'_> {
                         .expect("Unable to convert memory to private");
                     **status_code = TDG_VP_VMCALL_SUCCESS;
                 }
+            },
+            TDXExit::GetQuote(_, _, _) => {
+                panic!("TDXExit::GetQuote - not implemented");
             }
         }
         Ok(false)

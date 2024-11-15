@@ -24,8 +24,6 @@ tdx-tdcall = { version = "0.2.1", optional = true }
 
 [features]
 tdx = ["tdx-tdcall"]
-
-[features]
 snp = []
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]

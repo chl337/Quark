@@ -64,9 +64,12 @@ vmm-sys-util = {version = "0.12.1", optional = false }
 tdx = { git = "https://github.com/123abcpp/tdx.git",branch = "quark-tdx-1.1" }
 tdx-tdcall = { version = "0.2.1", optional = true }
 
+
 [features]
 cuda = ["cuda-driver-sys", "cuda-runtime-sys", "libelf", "rcublas-sys", "cuda11-cublasLt-sys"]
 tdx = ["tdx-tdcall"]
+snp = []
+
 
 [dependencies.lazy_static]
 version = "1.4"

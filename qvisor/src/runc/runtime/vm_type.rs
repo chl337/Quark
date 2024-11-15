@@ -18,6 +18,8 @@ pub mod emulcc;
 #[cfg(feature = "tdx")]
 pub mod tdx;
 pub mod resources;
+#[cfg(feature = "snp")]
+pub mod sevsnp;
 
 use std::sync::Arc;
 use kvm_ioctls::{Kvm, VmFd};

@@ -175,8 +175,9 @@ impl VirtualMachine {
                     });
                     info!("VMM: vCPU#{} - ThreadID:{} started", cpu_name, ThreadId());
                     match vm_type {
-                        _ => { cpu_obj.vcpu_run(tgid, Some(_kvm_fd_raw), Some(_vm_fd_raw))
+                       CCMode::TDX | CCMode::SevSnp => {cpu_obj.vcpu_run(tgid, Some(_kvm_fd_raw), Some(_vm_fd_raw))
                             .expect("VMM: vCPU failed to run."); }
+                        _ => { cpu_obj.vcpu_run(tgid, None, None).expect("VMM: vCPU failed to run."); }
                     };
 
                     info!("VMM: vCPU#{} - ThreadID:{} finished", cpu_name, ThreadId());

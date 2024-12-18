@@ -89,7 +89,7 @@ use self::qlib::kernel::memmgr;
 use self::qlib::kernel::perflog;
 use self::qlib::kernel::quring;
 use self::qlib::kernel::Kernel;
-use self::qlib::kernel::arch::tee::is_cc_active;
+use self::qlib::kernel::arch::tee::{is_cc_active, get_tee_type};
 use self::qlib::kernel::*;
 use self::qlib::{ShareSpaceRef, SysCallID};
 use self::qlib::kernel::socket;
@@ -114,6 +114,8 @@ use self::quring::*;
 use self::syscalls::syscalls::*;
 use self::task::*;
 use self::threadmgr::task_sched::*;
+#[cfg(feature = "snp")]
+use crate::qlib::kernel::Kernel::LOG_AVAILABLE;
 
 #[cfg(feature = "tdx")]
 use self::qlib::cc::tdx::{set_memory_shared_2mb, set_sbit_mask};
@@ -133,6 +135,8 @@ use x86_64::structures::tss::*;
 use self::qlib::mem::cc_allocator::*;
 use alloc::boxed::Box;
 use memmgr::pma::PageMgr;
+#[cfg(feature = "snp")]
+use crate::qlib::kernel::arch::__arch::arch_def::*;
 
 #[macro_use]
 mod print;
@@ -147,6 +151,8 @@ mod syscalls;
 
 #[cfg(feature = "snp")]
 use crate::qlib::kernel::arch::tee::sev_snp::ghcb::*;
+#[cfg(feature = "snp")]
+use crate::qlib::kernel::arch::tee::sev_snp::{set_cbit_mask, pvalidate, PvalidateSize};
 
 #[global_allocator]
 pub static VCPU_ALLOCATOR: GlobalVcpuAllocator = GlobalVcpuAllocator::New();
@@ -240,7 +246,7 @@ pub fn SingletonInit() {
         //error!("error message");
 
         if is_cc_active(){
-            if crate::qlib::kernel::arch::tee::get_tee_type() != CCMode::TDX {
+            if get_tee_type() != CCMode::TDX || get_tee_type() != CCMode::SevSnp {
                 KERNEL_PAGETABLE.Init(PageTables::Init(CurrentUserTable()));
                 interrupt::InitSingleton();
                 PAGE_MGR.SetValue(PAGE_MGR_HOLDER.Addr());
@@ -693,6 +699,33 @@ pub extern "C" fn rust_main(
         GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
         if mode != CCMode::None {
             crate::qlib::kernel::arch::tee::set_tee_type(mode);
+            #[cfg(feature = "snp")]
+            if mode == CCMode::SevSnp {
+                LOG_AVAILABLE.store(false, Ordering::Release);
+                for i in (MemoryDef::PHY_LOWER_ADDR..MemoryDef::IO_HEAP_END)
+                        .step_by(MemoryDef::PAGE_SIZE as usize)
+                    {
+                        let _ret = pvalidate(VirtAddr::new(i), PvalidateSize::Size4K, true);
+                    }
+                    unsafe {
+                        KERNEL_PAGETABLE
+                            .Init(PageTables::Init(CurrentKernelTable() & 0xffff_ffff_ffff));
+                    }
+
+                    //set idt first here cpuid is interceptted in cc
+                    unsafe {
+                        interrupt::InitSingleton();
+                    }
+                    interrupt::init();
+                    set_cbit_mask();
+                    PAGE_MGR.SetValue(PAGE_MGR_HOLDER.Addr());
+                    // ghcb convert shared memory
+                    InitShareMemory();
+                    //Different from normal vm, mxcsr will not be set by kvm, should set it mannualy
+                    //Should set before SingletonInit where default FP_STATE is saved.
+                    let mxcsr_value = MXCSR_DEFAULT;
+                    ldmxcsr(&mxcsr_value as *const _ as u64);
+            }
             GLOBAL_ALLOCATOR.InitSharedAllocator(mode);
             let size = core::mem::size_of::<ShareSpace>();
             let shared_space = unsafe {
@@ -706,6 +739,8 @@ pub extern "C" fn rust_main(
         }
 
         SingletonInit();
+        #[cfg(feature = "snp")]
+        LOG_AVAILABLE.store(true, Ordering::Release);
         debug!("init singleton finished");
         SetVCPCount(vcpuCnt as usize);
 
@@ -745,9 +780,17 @@ pub extern "C" fn rust_main(
                 init_gdt(id);
             }
         }
+        #[cfg(feature = "snp")]
+        x86_64::instructions::tlb::flush_all();
         interrupt::init();
         set_cpu_local(id);
-        //PerfGoto(PerfType::Kernel);
+        #[cfg(feature = "snp")]
+        if get_tee_type() == CCMode::SevSnp {
+            //Different from normal vm, mxcsr will not be set by kvm, should set it mannualy
+            let mxcsr_value = MXCSR_DEFAULT;
+            ldmxcsr(&mxcsr_value as *const _ as u64);
+            InitGhcb(id as usize);
+        }
     }
 
     //xcr0 should be initialized inside the kernel if tdx is enabled.

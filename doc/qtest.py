@@ -23,6 +23,35 @@ def log(_name, path):
     file_name = end_dir.joinpath(ctime + '.csv')
     return file_name
 
+def parse_test_arg(bench_test, bench_memslap, bench_memtier, application):
+    test = bench_test.test
+    cmd = ""
+    port = ""
+    if application == 'redis':
+        port = "6379"
+    else:
+        port = "11211"
+    match test:
+        case 'memslap':
+            args = bench_memslap.parse_args()
+            ops = args.ops
+            cmd = f'./bin/memslap --servers=127.0.0.1:{port} -t {ops} -c 100'
+        case 'memtier':
+            args = bench_memtier.parse_args()
+            clients = args.clients
+            threads = args.threads
+            ratio = args.ratio
+            random = ""
+            if args.random:
+                random = '-R'
+            cmd = f'memtier_benchmark -p {port} -s 127.0.0.1 --protocol={application} {random}\
+             --ratio={ratio} -c {clients} -t {threads}'
+        case _:
+            print('Invalid test')
+            return 1
+    return cmd
+
+
 def startup_time(log_name, runtimes=["quark"], tries=10):
     rtime = ""
     tmp_file = log_name.as_posix() + '.tmp'
@@ -53,29 +82,23 @@ def nginx_ops(log_name, runtimes, tries=100000):
             rtime = "--runtime="+r
         cname = r+'-nginx'
         tmp_file = log_name.as_posix() + '.'+ r + '.tmp'
-        command = f'docker run --rm {rtime} -p 80:80 --name {cname} --rm -it nginx'
+        command = f'docker run --rm {rtime} -p 80:80 --name {cname} -d nginx'
         check_ready = "ps -e|grep nginx &> /dev/null; echo $?"
+        cleanup = f'docker rm -f {cname}'
         check_op = f'ab -n {tries} -c 10 http://localhost/index.html'
 
         with open(tmp_file, 'a', newline='') as f:
-            print("file name:", tmp_file)
+            print(f'Start test for:{cname} - file name:{tmp_file}')
             pid = os.fork()
             if pid == 0:
                 subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
                 return 0
             else:
-                while True:
-                    time.sleep(2)
-                    result = subprocess.run(check_ready, shell=True, capture_output=True,
-                                            text=True)
-                    res = result.stdout.split()
-                    print("conn:", res[0])
-                    if res[0] == '0':
-                        break
+                time.sleep(10)
                 subprocess.run(check_op, shell=True, stdout=f,
                                stderr=subprocess.STDOUT, text=True)
                 f.flush()
-                os.kill(pid, signal.SIGKILL)
+                subprocess.run(cleanup, shell=True, check=True)
                 os.wait()
                 logs.append(tmp_file)
     if len(logs) > 0:
@@ -104,6 +127,38 @@ def _adjust_nginx_res(logs):
         _writer.writerow(header)
         _writer.writerow(data)
 
+def getset_perf(lname, runtimes, image, test_cont, test):
+    rtime = ""
+    logs = []
+    for r in runtimes:
+        if r != 'native':
+            rtime = "--runtime="+r
+        cname = r+image
+        tmp_file = log_name.as_posix() + '.'+ r + '.tmp'
+        command = test_cont.format(rtime, cname)
+        cleanup = f'docker rm -f {cname}'
+
+        with open(tmp_file, 'a', newline='') as f:
+            print(f'Start test for:{cname} - file name:{tmp_file}')
+            pid = os.fork()
+            if pid == 0:
+                subprocess.run(command, shell=True)
+                return 0
+            else:
+                time.sleep(10)
+                subprocess.run(test, shell=True, stdout=f,
+                               stderr=subprocess.STDOUT, text=True)
+                f.flush()
+                subprocess.run(cleanup, shell=True, check=True)
+                os.wait()
+                logs.append(tmp_file)
+            print(f'End test for:{cname} - file name:{tmp_file}')
+    if len(logs) > 0:
+        #TODO
+        _adjust_perf_res(logs)
+    else:
+        print("no logs from redis get/set perf")
+
 def redis_ops(log_name, runtimes, tries=100000):
     rtime = ""
     logs = []
@@ -112,31 +167,26 @@ def redis_ops(log_name, runtimes, tries=100000):
             rtime = "--runtime="+r
         cname = r+'-redis'
         tmp_file = log_name.as_posix() + '.'+ r + '.tmp'
-        command = f'docker run --rm {rtime} -p 6379:6379 --name {cname} --rm -it redis'
+        command = f'docker run --rm {rtime} -p 6379:6379 -d --name {cname} redis'
+        cleanup = f'docker rm -f {cname}'
         check_ready = "ps -e|grep redis &> /dev/null; echo $?"
         check_op = f'redis-benchmark -n {tries} -c 20 --csv'
 
         with open(tmp_file, 'a', newline='') as f:
-            print("file name:", tmp_file)
+            print(f'Start test for:{cname} - file name:{tmp_file}')
             pid = os.fork()
             if pid == 0:
-                subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+                subprocess.run(command, shell=True)
                 return 0
             else:
-                while True:
-                    time.sleep(2)
-                    result = subprocess.run(check_ready, shell=True, capture_output=True,
-                                            text=True)
-                    res = result.stdout.split()
-                    print("conn:", res[0])
-                    if res[0] == '0':
-                        break
+                time.sleep(10)
                 subprocess.run(check_op, shell=True, stdout=f,
                                stderr=subprocess.STDOUT, text=True)
                 f.flush()
-                os.kill(pid, signal.SIGKILL)
+                subprocess.run(cleanup, shell=True, check=True)
                 os.wait()
                 logs.append(tmp_file)
+            print(f'End test for:{cname} - file name:{tmp_file}')
     if len(logs) > 0:
         _adjust_redis_res(logs)
     else:
@@ -263,9 +313,20 @@ def build_plot(file):
 def main():
     argpars = argparse.ArgumentParser()
     argpars.add_argument('--type', help='Performance measurement or plot collected data',
-                         choices=['startup', 'redis-ops', 'nginx-ops', 'plot'], default='startup')
+                         choices=['startup', 'redis-ops', 'nginx-ops', 'memcached', 'plot'], default='startup')
     argpars.add_argument('--runtime', help='Select the runtime for tests (not applyed for "plot")',
                          choices=['all', 'native', 'runsc', 'quark'], nargs='+', default=['all'])
+    bench_perf_extra = argparse.ArgumentParser(parents=[argpars], add_help=False)
+    bench_perf_extra.add_argument('--test', help='Benchmark (Redis, Memcached) op-performance: GET, SET',
+                         choices=['memslap', 'memtier'])
+    bench_memslap = argparse.ArgumentParser(parents=[bench_perf_extra], add_help=False)
+    bench_memslap.add_argument('--ops', choices =['get', 'set'], default=['get'],
+                         help='Benchmark (Redis, Memcached) for ops:"GET, SET" for 10000 keys x 100 threads.')
+    bench_memtier = argparse.ArgumentParser(parents=[bench_perf_extra], add_help=False)
+    bench_memtier.add_argument('--random', action='store_false', help='Randomized data access')
+    bench_memtier.add_argument('--ratio', help='specify ops ratio SET:GET', default=['1:10'])
+    bench_memtier.add_argument('--clients', help='specify number of clients', default=['100'])
+    bench_memtier.add_argument('--threads', help='specify number of threads', default=['4'])
     log_path_pars = argparse.ArgumentParser(parents=[argpars], add_help=False)
     log_path_pars.add_argument('--path', help='All except "plot":Directory to save measurement \
         \nreport Only for "plot":Create a plot from the passed file', type=Path)
@@ -289,9 +350,21 @@ def main():
                 case 'startup':
                     startup_time(lname, runtimes)
                 case 'redis-ops':
-                    redis_ops(lname, runtimes)
+                    bench_test = bench_perf_extra.parse_args()
+                    if bench_test != None:
+                        test = parse_test_arg(bench_test, bench_memslap, bench_memtier, 'redis')
+                        test_cnt = 'docker run --rm {rtime} -p 6379:6379 --name {cont} -d redis'
+                        getset_perf(lname, runtimes, 'redis', test_cnt, test)
+                    else:
+                        redis_ops(lname, runtimes)
                 case 'nginx-ops':
                     nginx_ops(lname, runtimes)
+                case 'memcached':
+                    test = parse_test_arg(bench_test, bench_memslap, bench_memtier,
+                                              'memcache_text')
+                    test_cnt = 'docker run --rm {rtime} -p 11211:11211 --name {cont} -d memcached'
+                    getset_perf(lname, runtimes, 'memcached', test_cnt, test)
+                    print("TODO")
                 case _:
                     print(f'Error: command \'cmd_type\' not implemented')
                     return 1

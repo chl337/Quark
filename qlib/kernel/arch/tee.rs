@@ -64,9 +64,18 @@ pub fn is_cc_active() -> bool {
 /// bit(s) on the GPA is implementation defined by the particular TEE.
 pub fn gpa_adjust_shared_bit(_address: &mut u64, _protect: bool) {
     if is_hw_tee() {
-        //
-        // Impliment according to architecture
-        //
+        #[cfg(target_arch = "x86_64")] {
+            let shared_bit_mask = if get_tee_type() == CCMode::TDX {
+                crate::qlib::cc::tdx::get_sbit_mask()
+            } else {
+                panic!("VM: Unexpected CCMode in config.")
+            };
+            if _protect == false {
+                *_address = *_address | shared_bit_mask;
+            } else {
+                *_address = *_address & !shared_bit_mask;
+            }
+        }
     }
 }
 
@@ -76,9 +85,14 @@ pub fn guest_physical_address(ipa_address: u64) -> u64 {
     #![allow(unused_mut)]
     let mut address_guest = ipa_address;
     if is_hw_tee() {
-        //
-        // Impliment according to architecture
-        //
+        #[cfg(target_arch = "x86_64")] {
+            let shared_bit_mask = if get_tee_type() == CCMode::TDX {
+                crate::qlib::cc::tdx::get_sbit_mask()
+            } else {
+                panic!("VM: Unexpected CCMode in config.")
+            };
+            address_guest = address_guest & !shared_bit_mask;
+        }
     }
     address_guest
 }

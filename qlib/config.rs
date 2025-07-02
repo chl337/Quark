@@ -162,7 +162,11 @@ impl CCMode {
         }
     }
 
-    pub fn tee_backedup(_cc_type: u64) -> bool {
-        false
+    pub fn tee_backedup(cc_type: u64) -> bool {
+        let res: bool = match Self::from(cc_type) {
+            CCMode::SevSnp | CCMode::TDX => { true },
+            _ => { false },
+        };
+        res
     }
 }

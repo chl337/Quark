@@ -17,7 +17,7 @@ pub mod kvm_vcpu;
 use kvm_ioctls::{Kvm, VcpuExit, VmFd};
 use kvm_bindings::{kvm_regs, kvm_sregs, kvm_xcrs, KVM_MAX_CPUID_ENTRIES};
 use libc::gettid;
-use std::{os::fd::RawFd, convert::TryInto, mem::size_of, sync::atomic::{fence, Ordering}};
+use std::{os::fd::{RawFd, FromRawFd}, convert::TryInto, mem::size_of, sync::atomic::{fence, Ordering}};
 
 use crate::{amd64_def::{SegmentDescriptor, SEGMENT_DESCRIPTOR_ACCESS, SEGMENT_DESCRIPTOR_EXECUTE,
             SEGMENT_DESCRIPTOR_PRESENT, SEGMENT_DESCRIPTOR_WRITE}, arch::{tee::{emulcc::EmulCc,
@@ -198,8 +198,14 @@ impl VirtCpu for X86_64VirtCpu {
         let tid = unsafe { gettid() };
         self.vcpu_base.threadid.store(tid as u64, Ordering::SeqCst);
         self.vcpu_base.tgid.store(tgid as u64, Ordering::SeqCst);
-
-        self._run(None)
+        let kvm_fd = unsafe {
+            Kvm::from_raw_fd(_kvm_fd.unwrap())
+        };
+        let vm_fd = unsafe {
+            kvm_fd.create_vmfd_from_rawfd(_vm_fd.unwrap())
+                .unwrap()
+        };
+        self._run(Some(&vm_fd))
     }
 
     fn default_hypercall_handler(&self, hypercall: u16, arg0: u64, arg1: u64,
@@ -607,6 +613,9 @@ impl X86_64VirtCpu {
     }
 
     fn _run(&self, _vm_fd: Option<&VmFd>) -> Result<(), Error> {
+        if _vm_fd.is_none() {
+            panic!("No vmfd on run");
+        } 
         let mut exit_loop: bool;
         loop {
             if !vm::IsRunning() {

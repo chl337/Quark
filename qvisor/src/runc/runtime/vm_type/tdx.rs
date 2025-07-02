@@ -275,13 +275,13 @@ impl VmType for VmTDX {
         vms.pageTables = PageTables::New(&vms.allocator)?;
 
         let page_opt = PageOpts::Kernel();
-        let (_, kmem_base_guest, kmem_init_region) = self
+        let (_, kmem_base_guest, _) = self
             .vm_resources
             .mem_area_info(MemAreaType::KernelArea)
             .unwrap();
         vms.KernelMapHugeTable(
             Addr(kmem_base_guest),
-            Addr(kmem_base_guest + kmem_init_region),
+            Addr(kmem_base_guest + self.vm_resources.mem_layout.guest_mem_size),
             Addr(kmem_base_guest),
             page_opt.Val(),
             HugePageType::GB1,

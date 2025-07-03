@@ -17,7 +17,6 @@ use core::sync::atomic::Ordering;
 use crate::qlib::linux_def::MemoryDef;
 use crate::runc::runtime::vm_type::tdx::VmTDX;
 use crate::runc::runtime::vm_type::VmType;
-//#[cfg(feature = "cc")]
 use crate::arch::vm::vcpu::kvm_vcpu::Register;
 use crate::sharepara::ShareParaPage;
 use crate::VMS;
@@ -133,7 +132,6 @@ impl ConfCompExtension for Tdx<'_> {
     }
 }
 
-#[cfg(feature = "cc")]
 impl Tdx<'_> {
     fn _confidentiality_type(&self) -> CCMode {
         self.cc_mode

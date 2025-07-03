@@ -23,8 +23,7 @@ log = { version = "0.4", features = ["max_level_trace", "release_max_level_trace
 tdx-tdcall = { version = "0.2.1", optional = true }
 
 [features]
-cc = []
-tdx = ["cc", "tdx-tdcall"]
+tdx = ["tdx-tdcall"]
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64 = "0.14.7"

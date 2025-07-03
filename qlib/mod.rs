@@ -86,7 +86,8 @@ pub mod rdmasocket;
 pub mod tsot_msg;
 pub mod unix_socket;
 
-#[cfg (feature = "cc")]
+// NOTE: More refactorisation needed to run the same base also in aarch64
+#[cfg(target_arch = "x86_64")]
 pub mod cc;
 
 use self::kernel::dns::dns_svc::DnsSvc;

@@ -66,8 +66,7 @@ tdx-tdcall = { version = "0.2.1", optional = true }
 
 [features]
 cuda = ["cuda-driver-sys", "cuda-runtime-sys", "libelf", "rcublas-sys", "cuda11-cublasLt-sys"]
-cc = []
-tdx = ["cc", "tdx-tdcall"]
+tdx = ["tdx-tdcall"]
 
 [dependencies.lazy_static]
 version = "1.4"

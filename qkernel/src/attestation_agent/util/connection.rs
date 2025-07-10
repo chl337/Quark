@@ -150,7 +150,7 @@ impl ConnectionClient<'_> {
     const HTTP_HDR_CONT_LENGTH: &'static str = "content-length";
 
     pub fn send_request(&mut self, request: String) -> Result<Vec<u8>> {
-        let mut rx_buf = [0u8; MemoryDef::PAGE_SIZE_4K as usize];
+        let mut rx_buf = [0u8; 2 * MemoryDef::PAGE_SIZE_4K as usize]; //TDX Token is large
         let send_buf = request.as_bytes();
         let res = self.tls_conn.write(send_buf);
         if res.is_err() {

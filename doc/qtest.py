@@ -23,33 +23,98 @@ def log(_name, path):
     file_name = end_dir.joinpath(ctime + '.csv')
     return file_name
 
-def parse_test_arg(bench_test, bench_memslap, bench_memtier, application):
-    test = bench_test.test
+def parse_test_arg(args, application=None):
     cmd = ""
     port = ""
     if application == 'redis':
         port = "6379"
+    elif application == 'nginx':
+        port = '8080'
     else:
         port = "11211"
-    match test:
+    match args.command:
+        case 'wrk':
+            dur = args.duration
+            conn = args.connections
+            thr = args.threads
+            cmd = f'./bencht/wrk -d {dur}s -t {thr} -c {conn} http://127.0.0.1:8080/test.html'
         case 'memslap':
-            args = bench_memslap.parse_args()
             ops = args.ops
-            cmd = f'./bin/memslap --servers=127.0.0.1:{port} -t {ops} -c 100'
+            cmd = f'/home/christo/libmemcached/build/src/bin/memslap --servers=127.0.0.1:{port} -t {ops} -c 100'
         case 'memtier':
-            args = bench_memtier.parse_args()
             clients = args.clients
             threads = args.threads
             ratio = args.ratio
             random = ""
             if args.random:
                 random = '-R'
-            cmd = f'memtier_benchmark -p {port} -s 127.0.0.1 --protocol={application} {random}\
-             --ratio={ratio} -c {clients} -t {threads}'
+            cmd = f'memtier_benchmark -p {port} -s 127.0.0.1 --protocol={application} {random} '\
+             f'--ratio={ratio} -c {clients} -t {threads} --hide-histogram'
         case _:
             print('Invalid test')
             return 1
     return cmd
+
+def perf_from_qlog(log_name, platform, components):
+    qlog_path = '/var/log/quark/quark.log'
+    #Cleanup previous log
+    try:
+        os.remove(qlog_path)
+    except OSError:
+        pass
+    line_delim = 'Perf:'
+    grep = {
+            #TODO: in Quark - {Create, CvmMemoryProtect}/1000 -> all values to us
+            'creation': ['Create', 'CvmMemoryProtect',],
+            'start-up': ['Boot', 'Attestation', 'StartApp'],
+            'attestation':['Attestation', 'TokenAcquisition',
+                           'RCAR', 'ReportGeneration'],
+            }
+    test = 'docker run --rm -d --runtime=quark ubuntu:20.04 bash -c exit'
+    for i in range(100):
+        result = subprocess.run(test, shell=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+        if result.stderr != '':
+            print(result)
+            print('QPerf: Unexpected output - possible error');
+            return 1
+    res = {}
+    print(components)
+    with open(qlog_path, 'r') as log:
+        lines = log.readlines()
+        for comp in components:
+            data = {}
+            for line in lines:
+                if line_delim in line:
+                    cont = line.rstrip('\n').split('-')
+                    search = grep.get(comp)
+                    print(cont)
+                    print(search)
+                    for consern in search:
+                        if consern in cont[0]:
+                            key = cont[0].split()[-1]
+                            if consern in data:
+                                data[key] += float(cont[-1])
+                            else:
+                                data.update({key:float(cont[-1])})
+            print(data)
+            res.update({comp:data})
+    print(res)
+    for comp in components:
+        res_file = log_name.as_posix().split('.')[0] + '_' + platform.rstrip("'") + '_' + comp + '.csv'
+        print(res_file)
+        header = ['perf', comp]
+        data = res.get(comp)
+        with open(res_file, 'a', newline='') as f:
+            _writer = csv.writer(f)
+            _writer.writerow(header)
+            row = []
+            for k, v in data.items():
+                row.append(k)
+                row.append((v/float(100))/1000000) #to ms
+                _writer.writerow(row)
+            print(row)
+    time.sleep(5)
 
 
 def startup_time(log_name, runtimes=["quark"], tries=10):
@@ -134,18 +199,20 @@ def getset_perf(lname, runtimes, image, test_cont, test):
         if r != 'native':
             rtime = "--runtime="+r
         cname = r+image
-        tmp_file = log_name.as_posix() + '.'+ r + '.tmp'
+        tmp_file = lname.as_posix() + '.'+ r + '.tmp'
         command = test_cont.format(rtime, cname)
+        print(command)
         cleanup = f'docker rm -f {cname}'
 
         with open(tmp_file, 'a', newline='') as f:
-            print(f'Start test for:{cname} - file name:{tmp_file}')
+            print(f'Start test for:{cname} - file name:{tmp_file}\ncommand:{command}\ntest:{test}')
             pid = os.fork()
             if pid == 0:
                 subprocess.run(command, shell=True)
                 return 0
             else:
                 time.sleep(10)
+                print(test)
                 subprocess.run(test, shell=True, stdout=f,
                                stderr=subprocess.STDOUT, text=True)
                 f.flush()
@@ -154,10 +221,81 @@ def getset_perf(lname, runtimes, image, test_cont, test):
                 logs.append(tmp_file)
             print(f'End test for:{cname} - file name:{tmp_file}')
     if len(logs) > 0:
-        #TODO
-        _adjust_perf_res(logs)
+        _adjust_perf_res(logs, test)
     else:
-        print("no logs from redis get/set perf")
+        print("no logs from get/set perf")
+
+def _adjust_perf_res(logs, test):
+    _test = test.split()
+    ops = []
+    clients = 0
+    header = ["test"]
+    memtier_bin = False
+    data_pos = []
+    res = {}
+    if 'wrk' in _test[0]:
+        ops = ["Requests", "Transfer"]
+        data_pos = [1]
+    elif "memslap" in _test[0]:
+        ops[0] = _test[3].upper()
+        clients = 100
+        data_pos = [8]
+    else:
+        memtier_bin = True
+        ops = ["Get", "Set"]
+        clients = [-3]
+        data_pos = [1, 8]
+    for f in logs:
+        runtime = f.split('.')[-2]
+        header.append(runtime)
+        with open(f, 'r', newline='') as fd:
+            content = fd.readlines()
+            print(content)
+            for line in content:
+                for el in ops:
+                    if el in line:
+                        output = line.split()
+                        if 'Req' in el:
+                            el = 'Get'
+                        print(output)
+                        for i in range(len(data_pos)):
+                            val = output[data_pos[i]]
+                            if 'wrk' in _test[0]:
+                                val = ''.join(filter(lambda x: x.isdigit() or x == '.', val))
+                                if el == 'Get':
+                                    val = float(val) / 1000
+                            print(f'val:{val} - pos:{i} - ops:{el}' )
+                            if el.upper() not in res:
+                                res[el.upper()] = [val]
+                            else:
+                                res[el.upper()].append(val)
+    print("Res:", res)
+    return 1
+    log_file_name_base = logs[0].split('.')[0]
+    log_files = []
+    if memtier_bin:
+        log_files.append(log_file_name_base + '_ops.csv')
+        log_files.append(log_file_name_base + '_bd.csv')
+    else:
+        log_files.append(log_file_name_base + '.csv')
+
+    for i in range(len(log_files)):
+        with open(log_files[i], 'a', newline='') as f:
+            _writer = csv.writer(f)
+            _writer.writerow(header)
+            for k, v in res.items():
+                data = []
+                data.append(k)
+                if memtier_bin:
+                    for e in range(len(v)):
+                        if i == 0 and e % 2 == 0:
+                            data.append(v[e])
+                        elif memtier_bini == 1 and e % 2 == 1:
+                            data.append(v[e])
+                    row = data
+                else:
+                    row = data + v
+                _writer.writerow(row)
 
 def redis_ops(log_name, runtimes, tries=100000):
     rtime = ""
@@ -246,6 +384,7 @@ def _adjust_startup_res(src_fd, dest_file):
             _writer.writerow(row)
 
 def _ylabel(test):
+    #TODO: metric
     match test:
         case 'startup':
             return 'ms'
@@ -311,28 +450,40 @@ def build_plot(file):
     plt.show()
 
 def main():
-    argpars = argparse.ArgumentParser()
+    argpars = argparse.ArgumentParser(add_help=False)
     argpars.add_argument('--type', help='Performance measurement or plot collected data',
-                         choices=['startup', 'redis-ops', 'nginx-ops', 'memcached', 'plot'], default='startup')
+                         choices=['startup', 'redis-ops', 'nginx-ops', 'memcached-ops',
+                                  'quark-rt', 'plot'],
+                         default='startup')
     argpars.add_argument('--runtime', help='Select the runtime for tests (not applyed for "plot")',
                          choices=['all', 'native', 'runsc', 'quark'], nargs='+', default=['all'])
-    bench_perf_extra = argparse.ArgumentParser(parents=[argpars], add_help=False)
-    bench_perf_extra.add_argument('--test', help='Benchmark (Redis, Memcached) op-performance: GET, SET',
-                         choices=['memslap', 'memtier'])
-    bench_memslap = argparse.ArgumentParser(parents=[bench_perf_extra], add_help=False)
-    bench_memslap.add_argument('--ops', choices =['get', 'set'], default=['get'],
-                         help='Benchmark (Redis, Memcached) for ops:"GET, SET" for 10000 keys x 100 threads.')
-    bench_memtier = argparse.ArgumentParser(parents=[bench_perf_extra], add_help=False)
-    bench_memtier.add_argument('--random', action='store_false', help='Randomized data access')
-    bench_memtier.add_argument('--ratio', help='specify ops ratio SET:GET', default=['1:10'])
-    bench_memtier.add_argument('--clients', help='specify number of clients', default=['100'])
-    bench_memtier.add_argument('--threads', help='specify number of threads', default=['4'])
-    log_path_pars = argparse.ArgumentParser(parents=[argpars], add_help=False)
-    log_path_pars.add_argument('--path', help='All except "plot":Directory to save measurement \
+    argpars.add_argument('--path', help='All except "plot":Directory to save measurement \
         \nreport Only for "plot":Create a plot from the passed file', type=Path)
     argpars.add_argument('--for', help='(Temporay command) Select the test type to plot',
                          choices=['startup', 'redis'], nargs=1, default='startup')
-    args = log_path_pars.parse_args()
+
+    subparsers = argpars.add_subparsers(dest='command', metavar={'memtier', 'memslap', 'wrk', 'qperf'})
+    bench_qperf = subparsers.add_parser('qperf', add_help=False)
+    bench_qperf.add_argument('--platform', type=ascii, choices=['native', 'realm', 'tdx', 'sevsnp'], default='native')
+    bench_qperf.add_argument('--component', choices=['attestation', 'creation', 'start-up'],
+                             default=['creation'], nargs='+')
+    bench_wrk = subparsers.add_parser('wrk', add_help=False)
+    bench_wrk.add_argument('--duration', help='Duration of test', type=int, default='60')
+    bench_wrk.add_argument('--connections', help='Number of connections (>= threads)', type=int, default='4')
+    bench_wrk.add_argument('--threads', help='Number of threads to spawn', type=int, default='4')
+
+    bench_memtier = subparsers.add_parser('memtier', add_help=False)
+    bench_memtier.add_argument('--random', action='store_false', help='Randomized data access')
+    bench_memtier.add_argument('--ratio', help='specify ops ratio SET:GET', default='1:10')
+    bench_memtier.add_argument('--clients', help='specify number of clients', default='100')
+    bench_memtier.add_argument('--threads', help='specify number of threads', default='4')
+
+    bench_memslap = subparsers.add_parser('memslap', add_help=False)
+    bench_memslap.add_argument('--ops', choices =['get', 'set'], default='get',
+                         help='Benchmark (Redis, Memcached) for ops:"GET, SET" for 10000 keys x 100 threads.')
+
+    args = argpars.parse_args()
+    print(args)
     cmd_type = args.type
     log_path = args.path
     if cmd_type == 'plot':
@@ -349,25 +500,33 @@ def main():
             match cmd_type:
                 case 'startup':
                     startup_time(lname, runtimes)
+                case 'qperf':
+                    perf_from_qlog(lname, runtimes)
                 case 'redis-ops':
-                    bench_test = bench_perf_extra.parse_args()
-                    if bench_test != None:
-                        test = parse_test_arg(bench_test, bench_memslap, bench_memtier, 'redis')
-                        test_cnt = 'docker run --rm {rtime} -p 6379:6379 --name {cont} -d redis'
-                        getset_perf(lname, runtimes, 'redis', test_cnt, test)
+                    if args.command == 'memtier':
+                        test = parse_test_arg(args, 'redis')
+                        test_cnt = 'docker run --rm {0} -p 6379:6379 --name {1} -d redis'
+                        print(test_cnt)
+                        getset_perf(lname, runtimes, '-redis', test_cnt, test)
                     else:
                         redis_ops(lname, runtimes)
                 case 'nginx-ops':
-                    nginx_ops(lname, runtimes)
-                case 'memcached':
-                    test = parse_test_arg(bench_test, bench_memslap, bench_memtier,
-                                              'memcache_text')
-                    test_cnt = 'docker run --rm {rtime} -p 11211:11211 --name {cont} -d memcached'
-                    getset_perf(lname, runtimes, 'memcached', test_cnt, test)
-                    print("TODO")
+                    if args.command == 'wrk':
+                        test = parse_test_arg(args, 'nginx')
+                        test_cnt = 'docker run --rm {0} -d -p 8080:80 --name {1} -v $(realpath .)'\
+                        '/becht/http-test-files:/usr/share/nginx/html nginx'
+                        getset_perf(lname, runtimes, '-nginx', test_cnt, test)
+                    else:
+                        nginx_ops(lname, runtimes)
+                case 'memcached-ops':
+                    test = parse_test_arg(args, 'memcache_text')
+                    test_cnt = 'docker run --rm {0} -p 11211:11211 --name {1} -d memcached'
+                    getset_perf(lname, runtimes, '-memcached', test_cnt, test)
+                case 'quark-rt':
+                     perf_from_qlog(lname, args.platform, args.component)
                 case _:
-                    print(f'Error: command \'cmd_type\' not implemented')
-                    return 1
+                     print(f'Error: command \'cmd_type\' not implemented')
+                     return 1
         except Exception as ex:
             logging.exception(ex)
             os.remove(lname)

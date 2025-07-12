@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use std::os::unix::io::AsRawFd;
@@ -140,9 +141,13 @@ impl VirtualMachine {
         let umask = Self::Umask();
         info!("VMM: Reset umask from {:o} to {}", umask, 0);
         info!("VMM: VM will be created with parameters:{:?}", vm_type);
+        let now_typevm_creation = Instant::now();
         let vm = vm_type.create_vm(kernel_elf, args).expect("VM: faield to create.");
+        let elapsed = now_typevm_creation.elapsed().as_nanos();
+        debug!("Perf: CreateVM-{:?}-time-{:?}", cc_mode, elapsed);
         info!("VMM: Vm creation done.");
         PerfGofrom(PerfType::Other);
+
         Ok(vm)
     }
 

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
 use std::{os::fd::FromRawFd, sync::{atomic::Ordering, Arc}};
 
 use hashbrown::HashMap;
@@ -186,6 +187,7 @@ impl VmType for VmCcEmul {
         let (_, pheap, _) = self.vm_resources.mem_area_info(MemAreaType::PrivateHeapArea).unwrap();
         let _vcpu_total = VMS.lock().vcpuCount;
         let _auto_start = VMS.lock().args.as_ref().unwrap().AutoStart;
+        let now_vcpus_init = Instant::now();
         let _vcpus = self
             .vm_vcpu_initialize(
                 &_kvm,
@@ -196,6 +198,8 @@ impl VmType for VmCcEmul {
                 Some(pheap),
                 None)
             .expect("VM creation failed on vcpu creation.");
+        let elapsed = now_vcpus_init.elapsed();
+        debug!("Perf: CreateVCPU -  {} - time - {:?}", _vcpu_total, elapsed);
 
         let _vm_type: Box<dyn VmType> = self;
         let vm = VirtualMachine {

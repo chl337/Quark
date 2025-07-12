@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
 use super::super::vm::VirtualMachine;
 use super::resources::MemAreaType;
 use super::{resources::{MemArea, MemLayoutConfig, VmResources}, VmType};
@@ -199,6 +200,7 @@ impl VmType for VmNormal {
             .expect("VM creation failed on memory initialization.");
         let (heap_base, _, _) = self.vm_resources.mem_area_info(SharedHeapArea).unwrap();
         let _auto_start = VMS.lock().args.as_ref().unwrap().AutoStart;
+        let now_vcpus_init = Instant::now();
         let _vcpus = self
             .vm_vcpu_initialize(
                 &_kvm,
@@ -210,6 +212,8 @@ impl VmType for VmNormal {
                 Some(SHARE_SPACE.Value()),
             )
             .expect("VM creation failed on vcpu creation.");
+        let elapsed = now_vcpus_init.elapsed().as_nanos();
+        debug!("Perf: CreateVCPU-{}-time-{:?}", _vcpu_total, elapsed);
 
         let _vm_type: Box<dyn VmType> = self;
         let vm = VirtualMachine {

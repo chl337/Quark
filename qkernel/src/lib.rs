@@ -649,8 +649,9 @@ pub extern "C" fn rust_main(
     interrupt::init();
 
     /***************** can't run any qcall before this point ************************************/
-
     if id == 0 {
+        let __vcpu0 = TSC.Rdtsc();
+        debug!("Perf: FinishedBootVCPU-time-{}", Scale(__vcpu0)*1000);
         IOWait();
     };
 
@@ -722,6 +723,8 @@ fn StartRootContainer(_para: *const u8) -> ! {
         "enter user, entry: {:#x}, userStackAddr: {:#x}, kernelStackAddr: {:#x}",
         entry, userStackAddr, kernelStackAddr
     );
+    let enter_user_time = TSC.Rdtsc();
+    debug!("Perf: StartApp-time-{}", Scale(enter_user_time)*1000);
     EnterUser(entry, userStackAddr, kernelStackAddr);
 }
 

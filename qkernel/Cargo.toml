@@ -57,6 +57,10 @@ debug = 1
 lto = true
 opt-level = 2
 
+[features]
+default = ["duck-qk"]
+duck-qk = []
+
 [profile.release]
 panic = "abort"
 #opt-level = 0

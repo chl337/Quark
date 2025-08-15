@@ -197,6 +197,7 @@ pub struct VmCcRealm {
     kernel_img_size: u64,
     cc_mode: CCMode,
     realm: Realm,
+    init_ram_heap: u64,
 }
 
 impl VmType for VmCcRealm {
@@ -225,6 +226,7 @@ impl VmType for VmCcRealm {
         let _vdso_address = adjust_addr_to_guest(elf.vdsoStart, _emul_type);
         let mut _realm = Realm::default();
         let _kernel_img_size = (_vdso_address - _kernel_entry) + 3 * MemoryDef::PAGE_SIZE;
+        let _init_ram_heap = MemoryDef::GUEST_PRIVATE_HEAP_SIZE / 32u64; // 160 MB inital RAM as heap
         let mut _mem_map: HashMap<MemAreaType, MemArea> = HashMap::new();
         _mem_map.insert(
             MemAreaType::PrivateHeapArea,
@@ -298,6 +300,7 @@ impl VmType for VmCcRealm {
             kernel_img_size: _kernel_img_size,
             cc_mode: _emul_type,
             realm: _realm,
+            init_ram_heap: _init_ram_heap,
         };
         let box_type: Box<dyn VmType> = Box::new(vm_realm);
 
@@ -541,7 +544,7 @@ impl VmType for VmCcRealm {
             .expect("VM: Failed to populate for region: Kernel");
 
         info!("VM: Populate Realm memory - Guest Heap.");
-        kvm_vm_arm_rme_populate_range(vm_fd, gh_base, size)
+        kvm_vm_arm_rme_populate_range(vm_fd, gh_base, self.init_ram_heap)
             .expect("VM: Failed to populate for region: Guest Heap");
 
         Ok(())

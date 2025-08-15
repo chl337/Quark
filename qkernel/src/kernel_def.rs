@@ -55,7 +55,7 @@ use crate::GLOBAL_ALLOCATOR;
 use crate::PRIVATE_VCPU_ALLOCATOR;
 use crate::PRIVATE_VCPU_SHARED_ALLOCATOR;
 use super::qlib::qmsg::sharepara::*;
-use crate::qlib::kernel::arch::tee::is_cc_active;
+use crate::qlib::kernel::arch::tee::{is_cc_active, is_hw_tee, get_tee_type};
 use crate::GUEST_HOST_SHARED_ALLOCATOR;
 use alloc::boxed::Box;
 use crate::qlib::config::CCMode;
@@ -475,7 +475,7 @@ impl HostAllocator {
 
     pub fn InitPrivateAllocator(&self, mode: CCMode) {
         match mode {
-            CCMode::NormalEmu | CCMode::Cca => {
+            CCMode::NormalEmu => {
                 crate::qlib::kernel::Kernel::IDENTICAL_MAPPING.store(false, Ordering::SeqCst);
                 self.guestPrivHeapAddr.store(
                     MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
@@ -485,6 +485,7 @@ impl HostAllocator {
                     MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
                     MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET
                         + MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_SIZE,
+                    true
                 );
                 let size = core::mem::size_of::<ListAllocator>();
                 self.GuestPrivateAllocator().Add(
@@ -495,6 +496,27 @@ impl HostAllocator {
             CCMode::None => {
                 self.guestPrivHeapAddr
                     .store(MemoryDef::HEAP_OFFSET, Ordering::SeqCst);
+            }
+            CCMode::Cca => {
+                crate::qlib::kernel::Kernel::IDENTICAL_MAPPING.store(false, Ordering::SeqCst);
+                let curr_ram_usable = (MemoryDef::GUEST_PRIVATE_HEAP_SIZE / 32u64)
+                    - MemoryDef::GUEST_PRIVATE_INIT_HEAP_SIZE;
+                let curr_usable_heap = MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET +
+                    curr_ram_usable;
+                self.guestPrivHeapAddr.store(
+                    MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
+                    Ordering::SeqCst,
+                );
+                *self.GuestPrivateAllocator() = ListAllocator::New(
+                    MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
+                    curr_usable_heap,
+                    false
+                );
+                let size = core::mem::size_of::<ListAllocator>();
+                self.GuestPrivateAllocator().Add(
+                    MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET as usize + size,
+                    curr_ram_usable as usize - size,
+                );
             }
             _ => {
                 self.guestPrivHeapAddr
@@ -513,17 +535,31 @@ impl HostAllocator {
                     .store(MemoryDef::GUEST_HOST_SHARED_HEAP_OFFSET, Ordering::SeqCst);
                 let sharedHeapStart = self.sharedHeapAddr.load(Ordering::Relaxed);
                 let sharedHeapEnd = sharedHeapStart + MemoryDef::GUEST_HOST_SHARED_HEAP_SIZE as u64;
+                let filled = match get_tee_type() {
+                    CCMode::Cca => {
+                        true
+                    },
+                    _ => {
+                        let ret = if is_hw_tee() {
+                            false
+                        } else {
+                            true
+                        };
+                        ret
+                    }
+                };
                 *self.GuestHostSharedAllocator() =
-                    ListAllocator::New(sharedHeapStart as _, sharedHeapEnd);
-                let ioHeapEnd = sharedHeapEnd + MemoryDef::IO_HEAP_SIZE;
-                self.ioHeapAddr.store(sharedHeapEnd, Ordering::SeqCst);
-                *self.IOAllocator() = ListAllocator::New(sharedHeapEnd as _, ioHeapEnd);
-
-                let size = core::mem::size_of::<ListAllocator>();
-                self.IOAllocator().Add(
-                    MemoryDef::HEAP_END as usize + size,
-                    MemoryDef::IO_HEAP_SIZE as usize - size,
-                );
+                    ListAllocator::New(sharedHeapStart, sharedHeapEnd, filled);
+                if is_hw_tee() == false {
+                    let ioHeapEnd = sharedHeapEnd + MemoryDef::IO_HEAP_SIZE;
+                    self.ioHeapAddr.store(sharedHeapEnd, Ordering::SeqCst);
+                    *self.IOAllocator() = ListAllocator::New(sharedHeapEnd, ioHeapEnd, filled);
+                    let size = core::mem::size_of::<ListAllocator>();
+                    self.IOAllocator().Add(
+                        MemoryDef::HEAP_END as usize + size,
+                        MemoryDef::IO_HEAP_SIZE as usize - size,
+                    );
+                }
                 // reserve 4 pages for the listAllocator and share para page
                 let size = 4 * MemoryDef::PAGE_SIZE as usize;
                 self.GuestHostSharedAllocator().Add(

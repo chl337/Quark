@@ -77,6 +77,7 @@ pub fn ipa_adjust(ipa: &mut u64, protect: bool) {
 }
 
 pub mod psci {
+    #[cfg(feature = "duck-qk")]
     use core::arch::asm;
 
     pub fn cpu_on(boot_help_data: *const u64, vcpu_count: u64, pc: u64) {
@@ -84,6 +85,7 @@ pub mod psci {
         let help_data_slice = unsafe {
             core::slice::from_raw_parts(boot_help_data, data_items as usize)
         };
+        #[cfg(feature = "duck-qk")]
         let FID_PSCI_CPU_ON:u32 = 0xC4000003;
         for i in (2..data_items).step_by(2) {
             let mpidr: u64 = help_data_slice[i as usize] & 0xFF00FFFFFF; //Mask RES0 bit
@@ -93,6 +95,7 @@ pub mod psci {
             debug!("VM: CPU0 - help boot CPU{} - MPIDR:{:#0x} - Stack base offset:{:#0x}, BootPC:{:#0x}.",
             cpu, mpidr, stack_base_offset, pc);
             let mut _res: u64 = u64::MAX;
+            #[cfg(feature = "duck-qk")]
             unsafe {
                 asm!("bl _smc_exit",
                     in("x0") FID_PSCI_CPU_ON as u64,
@@ -106,9 +109,15 @@ pub mod psci {
     }
 }
 pub mod rsi {
+    #[cfg(feature = "duck-qk")]
     use core::arch::asm;
+    use crate::qlib::{SysErr, common::{Result, Error}};
+    #[cfg(feature = "duck-qk")]
+    use crate::qlib::linux_def::MemoryDef;
 
     pub const RSI_HOST_CALL_FID: u32 = 0xC4000199;
+    pub const RSI_IPA_STATE_SET_FID: u64 = 0xC4000197;
+
     #[repr(C, align(256))]
     pub struct RsiHostCall {
         pub imm: u16,
@@ -138,11 +147,14 @@ pub mod rsi {
             gprs[4] = arg3;
             gprs[5] = arg4;
 
+            #[cfg(feature = "duck-qk")]
             let rhc: Self = Self::new(gprs);
             // NOTE: This is correct because the kernel:
             // - is *identically* mapped - PA <-> VA
             // - kernel IPA is protected
+            #[cfg(feature = "duck-qk")]
             let ipa_rhc: u64 = &rhc as *const _ as u64;
+            #[cfg(feature = "duck-qk")]
             unsafe {
                 let mut _res: u64;
                 asm!("bl _smc_exit",
@@ -151,6 +163,39 @@ pub mod rsi {
                     lateout("x0") _res,);
             }
         }
+    }
+
+    pub fn tee_try_gpa_range_set(gpa: u64, npages_2mb: u64, ram: bool)
+        -> Result<bool> {
+        if ram == false {
+            return Err(Error::SysError(SysErr::EINVAL));
+        }
+        #[cfg(feature = "duck-qk")]
+        let ripas: u8 = 1u8; //RSI_RAM
+        #[cfg(feature = "duck-qk")]
+        let flags: u64 = 0u64; // RSI_NO_CHANGE_DESTROYED
+        #[cfg(feature = "duck-qk")]
+        let top: u64 = gpa + npages_2mb * MemoryDef::TWO_MB;
+        let mut _res = 0u64;
+        let mut _new_base = 0u64;
+        let mut _resp = 0u64;
+        #[cfg(feature = "duck-qk")]
+        unsafe {
+            asm!("bl _smc_exit",
+                in("x0") RSI_IPA_STATE_SET_FID as u64,
+                in("x1") gpa,
+                in("x2") top,
+                in("x3") ripas as u64,
+                in("x4") flags,
+                lateout("x0") _res,
+                lateout("x1") _new_base,
+                lateout("x2") _resp);
+        };
+        if _res != 0 || _resp != 0 {
+            panic!("Request failed for:{:#0x}-{} -- {} - {:#0x} - {}",
+                gpa, npages_2mb, _res, _new_base, _resp);
+        }
+        Ok(true)
     }
 }
 

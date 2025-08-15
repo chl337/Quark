@@ -24,7 +24,7 @@ use super::super::vcpu::kvm_vcpu::KvmAarch64Reg::{X0, X1};
 
 pub struct RealmCca<'a> {
     /// No special KVM Exits known at the momment
-    kvm_exits_list: Option<[VcpuExit<'a>; 0]>,
+    kvm_exits_list: [VcpuExit<'a>; 1],
     hypercalls_list: [u16; 1],
     pub cc_mode: CCMode,
     pub share_space_table_addr: Option<u64>,
@@ -38,7 +38,7 @@ impl ConfCompExtension for RealmCca<'_> {
         where Self: Sized {
         let _cc_mode = QUARK_CONFIG.lock().CCMode;
         let _self: Box<dyn ConfCompExtension> = Box::new(RealmCca{
-            kvm_exits_list: None,
+            kvm_exits_list: [VcpuExit::MemoryFault( 0u64, 0u64, 0u64 )],
             hypercalls_list:[qlib::HYPERCALL_SHARESPACE_INIT],
             share_space_table_addr: None,
             page_allocator_addr: _page_allocator_base_addr
@@ -68,7 +68,20 @@ impl ConfCompExtension for RealmCca<'_> {
     }
 
     fn should_handle_kvm_exit(&self, _kvm_exit: &kvm_ioctls::VcpuExit) -> bool {
-        self.kvm_exits_list.is_some()
+        self.kvm_exits_list.contains(_kvm_exit)
+    }
+
+    fn handle_kvm_exit(&self, _kvm_exit: &mut VcpuExit, _vcpu_id: usize, _vm_fd: Option<&kvm_ioctls::VmFd>)
+            -> Result<bool, Error> {
+        let _res = match _kvm_exit {
+            VcpuExit::MemoryFault(flags, gpa, size) => {
+                debug!("Requst for ram:{:#0x} - {:#0x} - flags:{:#0x}",
+                    gpa, size, flags);
+                true
+            },
+            _ => false,
+        };
+        Ok(_res)
     }
 
     fn should_handle_hypercall(&self, hypercall: u16) -> bool {

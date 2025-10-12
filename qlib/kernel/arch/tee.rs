@@ -222,7 +222,7 @@ fn _try_gpa_range_set_fmap(entry: usize, mask: u128, gpa_address: u64, npages: u
         } else {
             let res = match get_tee_type() {
                 CCMode::SevSnp => {
-                    todo!("Add: sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, true)");
+                    sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, true)
                 },
                 CCMode::TDX => {
                     use crate::qlib::cc::tdx;
@@ -254,7 +254,7 @@ fn _try_gpa_range_set_heap(entry: usize, mask: u64, gpa_address: u64, npages: u6
         } else {
             let res = match get_tee_type() {
                 CCMode::SevSnp => {
-                    todo!("sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, !to_prv");
+                    sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, !to_prv)
                 },
                 CCMode::TDX => {
                     use crate::qlib::cc::tdx;

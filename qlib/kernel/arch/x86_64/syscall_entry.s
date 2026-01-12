@@ -22,6 +22,7 @@
 .globl virtualization_handler
 .globl kvm_injected_handler
 .globl security_handler
+.globl vmm_communication_handler
 
 .extern syscall_handler, CopyData,
 
@@ -418,6 +419,9 @@ kvm_injected_handler:
 
 security_handler:
     HandlerWithoutErrorCode SecurityHandler
+
+vmm_communication_handler:
+    HandlerWithErrorCode VmmCommunicationHandler
 
 initX86FPState:
     // Save MXCSR (callee-save)

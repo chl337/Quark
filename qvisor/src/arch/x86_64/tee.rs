@@ -14,6 +14,7 @@
 
 use kvm_ioctls:: VcpuFd;
 use crate::arch::tee::emulcc::EmulCc;
+#[cfg(feature = "tdx")]
 use crate::arch::tee::tdx::Tdx;
 use crate::arch::tee::NonConf;
 use crate::qlib::common::Error;

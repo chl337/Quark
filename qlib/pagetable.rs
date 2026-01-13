@@ -22,15 +22,15 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering;
 use crate::qlib::kernel::arch::tee;
-use crate::qlib::CCMode;
-#[cfg(feature = "tdx")]
+#[cfg(any(feature = "tdx", feature = "snp" ))]
 pub use x86_64::structures::paging::{Page, Size1GiB, Size2MiB, Size4KiB};
+#[cfg(any(feature = "tdx", feature = "snp" ))]
+pub use x86_64::instructions::tlb::flush;
 #[cfg(feature = "tdx")]
 use crate::qlib::cc::tdx::get_sbit_mask;
 #[cfg(any(feature = "tdx", feature = "snp" ))]
 use alloc::string::ToString;
 cfg_x86_64! {
-   pub use x86_64::instructions::tlb::flush;
    pub use x86_64::structures::paging::page_table::PageTableEntry;
    pub use x86_64::structures::paging::page_table::PageTableIndex;
    pub use x86_64::structures::paging::PageTable;
@@ -895,12 +895,13 @@ impl PageTables {
     ///return Ok(true) if smash is done, Ok(false) if smash is not done, but already has 2mb/4kb page
     #[cfg(any(feature = "tdx", feature = "snp" ))]
     pub fn smash(&self, vaddr: VirtAddr, pagePool: &Allocator, to2mb: bool) -> Result<bool> {
+        use crate::qlib::CCMode;
+
         if !vaddr.is_aligned(MemoryDef::PAGE_SIZE_4K) {
             return Err(Error::UnallignedAddress(vaddr.as_u64().to_string()));
         }
 
         let addr = vaddr.as_u64();
-        let s_bit_mask = get_sbit_mask();
         let p4Idx = vaddr.p4_index();
         let p3Idx = vaddr.p3_index();
         let p2Idx = vaddr.p2_index();
@@ -2034,9 +2035,6 @@ impl PageTables {
         end: VirtAddr,
         pagePool: &Allocator,
     ) -> Result<()> {
-        pub use x86_64::instructions::tlb::flush;
-        pub use x86_64::structures::paging::{Page, Size1GiB, Size2MiB, Size4KiB};
-
         if !start.is_aligned(MemoryDef::PAGE_SIZE_4K) {
             return Err(Error::UnallignedAddress(start.as_u64().to_string()));
         }

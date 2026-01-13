@@ -14,6 +14,7 @@
 #[cfg(feature = "snp")]
 pub mod sevsnp;
 pub mod emulcc;
+#[cfg(feature = "tdx")]
 pub mod tdx;
 
 use kvm_ioctls::{VcpuExit, VcpuFd};

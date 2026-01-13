@@ -828,6 +828,14 @@ const EXIT_REASON_MONITOR_INSTRUCTION: u32 = 39;
 #[cfg(feature = "tdx")]
 const EXIT_REASON_WBINVD: u32 = 54;
 
+///
+/// Avoid linker issue
+///
+#[cfg(not(feature = "tdx"))]
+#[no_mangle]
+pub extern "C" fn VirtualizationHandler(_ptRegs: &mut PtRegs) {
+}
+
 #[cfg(feature = "tdx")]
 #[no_mangle]
 pub extern "C" fn VirtualizationHandler(ptRegs: &mut PtRegs) {

@@ -21,9 +21,12 @@ TDSHIM          = td-shim/shim.bin
 
 ARCH := ${shell uname -m}
 RUST_TOOLCHAIN  = nightly-2023-12-11-$(ARCH)-unknown-linux-gnu
+BTYPE		?= debug
+X86CPU_TYPE	:= $(shell lscpu | awk -F: '/Vendor ID/ {gsub(/^[ \t]+/, "", $$2); print $$2}')
 
 
-.PHONY: all release debug clean install qvisor_release qvisor_debug cuda_make cuda_all cleanall
+
+.PHONY: all release debug clean install qvisor_release qvisor_debug cuda_make cuda_all cc_x86_debug cc_x86_release cleanall
 
 all:: release debug
 
@@ -74,6 +77,28 @@ qvisor_cuda_release:
 
 qvisor_cuda_debug:
 	make -C ./qvisor TOOLCHAIN=$(RUST_TOOLCHAIN) cuda_debug
+
+cc_x86_debug:
+ifeq ($(ARCH),x86_64)
+	$(MAKE) cc_x86 BTYPE=debug
+else
+	$(error Wrong architecture - requires x86_64)
+endif
+
+
+cc_x86_release:
+ifeq ($(ARCH),x86_64)
+	$(MAKE) cc_x86 BTYPE=release
+else
+	$(error Wrong architecture - requires x86_64)
+endif
+
+cc_x86:
+ifeq ($(X86CPU_TYPE),GenuineIntel)
+	$(MAKE) tdx_$(BTYPE)
+else
+	$(MAKE) snp_$(BTYPE)
+endif
 
 tdx_release:: qvisor_tdx_release qkernel_tdx_release $(VDSO) tdx_make
 

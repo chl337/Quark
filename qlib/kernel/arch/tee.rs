@@ -208,7 +208,7 @@ impl GpaArea {
 }
 
 
-fn _try_gpa_range_set_fmap(entry: usize, mask: u128, gpa_address: u64, npages: u64)
+fn _try_gpa_range_set_fmap(entry: usize, mask: u128, _gpa_address: u64, _npages: u64)
     -> Result<bool> {
     let try_set = {
         let bucket = FMAP_ACCESSED[entry].read();
@@ -221,12 +221,14 @@ fn _try_gpa_range_set_fmap(entry: usize, mask: u128, gpa_address: u64, npages: u
             return Ok(false);
         } else {
             let res = match get_tee_type() {
+                #[cfg(all(target_arch = "x86_64", feature = "snp"))]
                 CCMode::SevSnp => {
-                    sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, true)
+                    sev_snp::tee_try_gpa_range_set(_gpa_address, _npages as usize, true)
                 },
+                #[cfg(all(target_arch = "x86_64", feature = "tdx"))]
                 CCMode::TDX => {
                     use crate::qlib::cc::tdx;
-                    tdx::tee_try_gpa_range_set(gpa_address, npages, false)
+                    tdx::tee_try_gpa_range_set(_gpa_address, _npages, false)
                 },
                 _ => {
                     Err(Error::SysError(SysErr::EFAULT))
@@ -241,7 +243,7 @@ fn _try_gpa_range_set_fmap(entry: usize, mask: u128, gpa_address: u64, npages: u
     Ok(false)
 }
 
-fn _try_gpa_range_set_heap(entry: usize, mask: u64, gpa_address: u64, npages: u64, to_prv: bool)
+fn _try_gpa_range_set_heap(entry: usize, mask: u64, _gpa_address: u64, _npages: u64, _to_prv: bool)
     -> Result<bool> {
     let try_set = {
         let bucket = HEAP_ACCESSED[entry].read();
@@ -253,12 +255,14 @@ fn _try_gpa_range_set_heap(entry: usize, mask: u64, gpa_address: u64, npages: u6
             return Ok(false);
         } else {
             let res = match get_tee_type() {
+                #[cfg(all(target_arch = "x86_64", feature = "snp"))]
                 CCMode::SevSnp => {
-                    sev_snp::tee_try_gpa_range_set(gpa_address, npages as usize, !to_prv)
+                    sev_snp::tee_try_gpa_range_set(_gpa_address, _npages as usize, !_to_prv)
                 },
+                #[cfg(all(target_arch = "x86_64", feature = "tdx"))]
                 CCMode::TDX => {
                     use crate::qlib::cc::tdx;
-                    tdx::tee_try_gpa_range_set(gpa_address, npages, to_prv)
+                    tdx::tee_try_gpa_range_set(_gpa_address, _npages, _to_prv)
                 },
                 _ => {
                     Err(Error::SysError(SysErr::EFAULT))

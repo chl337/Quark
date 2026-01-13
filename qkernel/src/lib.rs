@@ -691,26 +691,16 @@ pub extern "C" fn rust_main(
     if id == 0 {
         //if in any cc machine, shareSpaceAddr is reused as CCMode
         let mode = CCMode::from(shareSpaceAddr);
-        #[cfg(feature = "tdx")]
-        if mode == CCMode::TDX {
-            GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap();
-            unsafe {
-                KERNEL_PAGETABLE.Init(PageTables::Init(CurrentKernelTable()));
-                init_gdt(id);
-                interrupt::InitSingleton();
-            }
-            interrupt::init();
-            set_sbit_mask();
-            PAGE_MGR.SetValue(PAGE_MGR_HOLDER.Addr());
-            //Tdcall convert initial shared memory
-            let sh_2mb_pages: u64 = 96;
-            InitShareMemory(sh_2mb_pages);
-        }
-        GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
-        if mode != CCMode::None {
-            crate::qlib::kernel::arch::tee::set_tee_type(mode);
+        crate::qlib::kernel::arch::tee::set_tee_type(mode);
+        match mode {
+            CCMode::None => {
+                GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
+                GLOBAL_ALLOCATOR.InitSharedAllocator(mode);
+                SHARESPACE.SetValue(shareSpaceAddr);
+            },
             #[cfg(feature = "snp")]
-            if mode == CCMode::SevSnp {
+            CCMode::SevSnp => {
+                GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
                 LOG_AVAILABLE.store(false, Ordering::Release);
                 let init_pv_h = MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET + (176 * MemoryDef::ONE_MB);
                 for i in (MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET..init_pv_h)
@@ -737,7 +727,28 @@ pub extern "C" fn rust_main(
                     //Should set before SingletonInit where default FP_STATE is saved.
                     let mxcsr_value = MXCSR_DEFAULT;
                     ldmxcsr(&mxcsr_value as *const _ as u64);
-            }
+            },
+            #[cfg(feature = "tdx")]
+            CCMode::TDX => {
+                GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap();
+                unsafe {
+                    KERNEL_PAGETABLE.Init(PageTables::Init(CurrentKernelTable()));
+                    init_gdt(id);
+                    interrupt::InitSingleton();
+                }
+                interrupt::init();
+                set_sbit_mask();
+                PAGE_MGR.SetValue(PAGE_MGR_HOLDER.Addr());
+                //Tdcall convert initial shared memory
+                let sh_2mb_pages: u64 = 96;
+                InitShareMemory(sh_2mb_pages);
+                GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
+            },
+            _ => {
+                GLOBAL_ALLOCATOR.InitPrivateAllocator(mode);
+            },
+        };
+        if mode != CCMode::None {
             GLOBAL_ALLOCATOR.InitSharedAllocator(mode);
             let size = core::mem::size_of::<ShareSpace>();
             let shared_space = unsafe {
@@ -745,11 +756,7 @@ pub extern "C" fn rust_main(
             };
             HyperCall64(qlib::HYPERCALL_SHARESPACE_INIT, shared_space as u64, 0, 0, 0);
             SHARESPACE.SetValue(shared_space as u64);
-        } else {
-            GLOBAL_ALLOCATOR.InitSharedAllocator(mode);
-            SHARESPACE.SetValue(shareSpaceAddr);
         }
-
         SingletonInit();
         #[cfg(feature = "snp")]
         LOG_AVAILABLE.store(true, Ordering::Release);
@@ -778,23 +785,20 @@ pub extern "C" fn rust_main(
         debug!("init vdso finished");
 
         #[cfg(feature = "tdx")]
-        if crate::qlib::kernel::arch::tee::get_tee_type() == CCMode::TDX {
+        if get_tee_type() == CCMode::TDX {
             let additional_data = [0u8; 64];
             let report = tdx_tdcall::tdreport::tdcall_report(&additional_data).unwrap();
             info!("{:#x?}", report);
         }
         // release other vcpus
         HyperCall64(qlib::HYPERCALL_RELEASE_VCPU, 0, 0, 0, 0);
-        match crate::qlib::kernel::arch::tee::get_tee_type() {
-            #[cfg(target_arch = "aarch64")]
-            CCMode::Cca => {
-                 unsafe {
-                     let boot_help_data = BOOT_HELP_DATA.load(Ordering::Relaxed);
-                     let boot_vcpu_pc = BOOT_VCPU_PC.load(Ordering::Relaxed);
-                     arch::tee::boot_others(boot_help_data, vcpuCnt, boot_vcpu_pc);
-                 }
+        #[cfg(target_arch = "aarch64")]
+        if get_tee_type() == CCMode::Cca {
+            unsafe {
+                let boot_help_data = BOOT_HELP_DATA.load(Ordering::Relaxed);
+                let boot_vcpu_pc = BOOT_VCPU_PC.load(Ordering::Relaxed);
+                arch::tee::boot_others(boot_help_data, vcpuCnt, boot_vcpu_pc);
             }
-            _ => {},
         }
 
     } else {
@@ -819,7 +823,7 @@ pub extern "C" fn rust_main(
 
     //xcr0 should be initialized inside the kernel if tdx is enabled.
     #[cfg(feature = "tdx")]
-    if crate::qlib::kernel::arch::tee::get_tee_type() == CCMode::TDX {
+    if get_tee_type() == CCMode::TDX {
         use x86_64::registers::xcontrol::XCr0Flags;
         unsafe {
             x86_64::registers::xcontrol::XCr0::write(

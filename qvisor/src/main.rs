@@ -55,6 +55,7 @@ extern crate regex;
 extern crate simplelog;
 extern crate spin;
 extern crate tabwriter;
+#[cfg(all(target_arch = "x86_64", feature = "tdx"))]
 extern crate tdx;
 
 #[macro_use]

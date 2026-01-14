@@ -309,6 +309,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossterm"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f476fe445d41c9e991fd07515a6f463074b782242ccf4a5b7b1d1012e70824df"
+dependencies = [
+ "bitflags 2.6.0",
+ "crossterm_winapi",
+ "libc",
+ "mio",
+ "parking_lot",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "crossterm_winapi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdd7c62a3665c7f6830a51635d9ac9b23ed385797f70a83bb8bafe9c572ab2b"
+dependencies = [
+ "winapi 0.3.9",
+]
+
+[[package]]
 name = "cuda-config"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -691,7 +716,7 @@ dependencies = [
 [[package]]
 name = "kvm-bindings"
 version = "0.5.0"
-source = "git+https://github.com/123abcpp/kvm-bindings.git?branch=quark#b6e246834a64aae8720585c862416457b90ca3e7"
+source = "git+https://github.com/123abcpp/kvm-bindings.git?branch=quark#ab312c24f1d0786afd7413ab3d780c0d8a740992"
 dependencies = [
  "vmm-sys-util",
 ]
@@ -699,7 +724,7 @@ dependencies = [
 [[package]]
 name = "kvm-ioctls"
 version = "0.11.0"
-source = "git+https://github.com/123abcpp/kvm-ioctls.git?branch=quark-cc#b005d909b155620412d2675c90b5cceaecbbf218"
+source = "git+https://github.com/123abcpp/kvm-ioctls.git?branch=quark-cc#802981bf4ff6981ede866a87aba551e1200b08ee"
 dependencies = [
  "kvm-bindings",
  "libc",
@@ -723,9 +748,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.137"
+version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
+checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 
 [[package]]
 name = "libelf"
@@ -759,9 +784,9 @@ dependencies = [
 
 [[package]]
 name = "lock_api"
-version = "0.4.5"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "712a4d093c9976e24e7dbca41db895dabcbac38eb5f4045393d17a95bdfb1109"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
 dependencies = [
  "scopeguard",
 ]
@@ -805,6 +830,18 @@ checksum = "a92518e98c078586bc6c934028adcca4c92a53d6a958196de835170a01d84e4b"
 dependencies = [
  "adler",
  "autocfg",
+]
+
+[[package]]
+name = "mio"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a650543ca06a924e8b371db273b2756685faae30f8487da1b56505a8f78b0c"
+dependencies = [
+ "libc",
+ "log",
+ "wasi 0.11.1+wasi-snapshot-preview1",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -923,6 +960,29 @@ checksum = "2c92f2b54f081d635c77e7120862d48db8e91f7f21cef23ab1b4fe9971c59f55"
 dependencies = [
  "libc",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+dependencies = [
+ "lock_api",
+ "parking_lot_core",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
+dependencies = [
+ "cfg-if 1.0.0",
+ "libc",
+ "redox_syscall 0.5.18",
+ "smallvec",
+ "windows-link",
 ]
 
 [[package]]
@@ -1186,13 +1246,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_syscall"
+version = "0.5.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
+dependencies = [
+ "bitflags 2.6.0",
+]
+
+[[package]]
 name = "redox_users"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7776223e2696f1aa4c6b0170e83212f47296a00424305117d013dfe86fb0fe55"
 dependencies = [
  "getrandom 0.2.5",
- "redox_syscall",
+ "redox_syscall 0.2.11",
  "thiserror",
 ]
 
@@ -1386,12 +1455,23 @@ checksum = "7fdf1b9db47230893d76faad238fd6097fd6d6a9245cd7a4d90dbd639536bbd2"
 
 [[package]]
 name = "signal-hook"
-version = "0.3.13"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "647c97df271007dcea485bb74ffdb57f2e683f1306c854f468a0c244badabf2d"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
 dependencies = [
  "libc",
  "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook",
 ]
 
 [[package]]
@@ -1413,6 +1493,12 @@ dependencies = [
  "log",
  "term",
 ]
+
+[[package]]
+name = "smallvec"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "spin"
@@ -1488,6 +1574,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tdx"
+version = "0.1.0"
+source = "git+https://github.com/123abcpp/tdx.git?branch=quark-tdx-1.1_update_kvm-ioctl#f969e6d98f81c56bf52e31525a9b457d66d002ec"
+dependencies = [
+ "bitflags 2.6.0",
+ "kvm-bindings",
+ "kvm-ioctls",
+ "libc",
+ "uuid 1.16.0",
+ "vmm-sys-util",
+]
+
+[[package]]
+name = "tdx-tdcall"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6ea90455a0e1ee10fe5dd2ddd377d32c6df739ce156b6db5ad87e4c72d460ff"
+dependencies = [
+ "lazy_static",
+ "log",
+ "scroll",
+ "spin 0.9.2",
+ "x86_64",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,7 +1608,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "fastrand",
  "libc",
- "redox_syscall",
+ "redox_syscall 0.2.11",
  "remove_dir_all",
  "winapi 0.3.9",
 ]
@@ -1673,6 +1785,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
+
+[[package]]
 name = "which"
 version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,6 +1841,12 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "windows-sys"
@@ -1889,7 +2013,10 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f005c964432a1f9ee04598e094a3eb5f7568f6b33e89a2762d7bef6fbe8b255"
 dependencies = [
+ "crossterm",
  "num-traits 0.2.14",
+ "serde 1.0.136",
+ "serde_derive 1.0.136",
 ]
 
 [[package]]
@@ -1900,6 +2027,8 @@ checksum = "9107477944697db42c41326f82d4c65b769b32512cdad1e086f36f0e0f25ff45"
 dependencies = [
  "cfg-if 1.0.0",
  "num-traits 0.2.14",
+ "serde 1.0.136",
+ "serde_derive 1.0.136",
  "yaxpeax-arch",
 ]
 

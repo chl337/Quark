@@ -174,18 +174,31 @@ lazy_static! {
     //
     //NOTE: The ranges may differ between Snp / TDX / CCA
     //
+
+    //
+    // Only Snp / TDX
+    //
     static ref FMAP_ACCESSED: [QRwLock<u128>; 6] = [QRwLock::new(0), QRwLock::new(0),
         QRwLock::new(0), QRwLock::new(0), QRwLock::new(0),
         QRwLock::new(0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_7000)];
     //
     //NOTE: The lower half represents the guest private heap - the upper half the host shared.
     //  Access to guest allocator is synchronized.
+    // TDX | SevSnp
     // a) The first 1200MB of guest heap are initialized.
     // b) The first 192MB of host shared heap are initialized.
-    // The IOHeap is fully initialized and not represented here.
+   // // CCA
+   // // a) The first 256MB of guest heap are initialized.
+   // // The IOHeap is fully initialized and not represented here.
     static ref HEAP_ACCESSED: [QRwLock<u64>; 10] = [
+        #[cfg(target_arch = "x86_64")]
         QRwLock::new(0xFFFF_FFFF_FFFF_FFFF), // 1GB
+        #[cfg(target_arch = "x86_64")]
         QRwLock::new(0xFFE0_0000_0000_0000),
+        #[cfg(target_arch = "aarch64")]
+        QRwLock::new(0xF000_0000_0000_0000), // 64MB
+        #[cfg(target_arch = "aarch64")]
+        QRwLock::new(0x0000_0000_0000_0000),
         QRwLock::new(0x0000_0000_0000_0000),
         QRwLock::new(0x0000_0000_0000_0000),
         QRwLock::new(0x0000_0000_0000_0000), //End of guest heap
@@ -286,6 +299,10 @@ fn _try_gpa_range_set_heap(entry: usize, mask: u64, _gpa_address: u64, _npages: 
                     use crate::qlib::cc::tdx;
                     tdx::tee_try_gpa_range_set(_gpa_address, _npages, _to_prv)
                 },
+                #[cfg(all(target_arch = "aarch64", feature = "qk"))]
+                CCMode::Cca => {
+                    _tee::rsi::RipasStateReq::set(_gpa_address, _npages, _to_prv)
+                },
                 _ => {
                     Err(Error::SysError(SysErr::EFAULT))
                 },
@@ -336,13 +353,21 @@ fn _set_gpa_range_status(addr: u64, gpa_area: &GpaArea) -> Result<bool> {
 
     let res = match gpa_area {
         GpaArea::FlMap(_, _) => {
-            _try_gpa_range_set_fmap(entry as usize, mask, gpa_address, npages)
+            if cfg!(target_arch = "x86_64") {
+                _try_gpa_range_set_fmap(entry as usize, mask, gpa_address, npages)
+            } else {
+                Ok(true)
+            }
         },
         GpaArea::PrvHeap(_, _) => {
             _try_gpa_range_set_heap(entry as usize, mask as u64, gpa_address, npages, true)
         },
         GpaArea::ShrdHeap(_, _) => {
-            _try_gpa_range_set_heap(entry as usize, mask as u64, gpa_address, npages, false)
+            if cfg!(target_arch = "x86_64") {
+                _try_gpa_range_set_heap(entry as usize, mask as u64, gpa_address, npages, false)
+            } else {
+                Ok(true)
+            }
         }
     };
     res

@@ -105,8 +105,58 @@ pub mod psci {
         }
     }
 }
+
 pub mod rsi {
     use core::arch::asm;
+    use core::convert::TryFrom;
+    use crate::qlib::common::{Result, Error};
+    use crate::qlib::linux_def::{MemoryDef, SysErr};
+
+    #[repr(u64)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum CmdReturnCode {
+        SUCCESS    = 0u64,
+        EINPUT     = 1u64,
+        ESTATE     = 2u64,
+        INCOMPLETE = 3u64,
+        EUNKN      = 4u64,
+        EDEV       = 5u64
+    }
+
+    impl TryFrom<u64> for CmdReturnCode {
+        type Error = ();
+
+        fn try_from(val: u64) -> core::result::Result<Self, Self::Error> {
+            match val {
+                x if x == CmdReturnCode::SUCCESS as u64 => Ok(Self::SUCCESS),
+                x if x == CmdReturnCode::EINPUT as u64 => Ok(Self::EINPUT),
+                x if x == CmdReturnCode::ESTATE as u64 => Ok(Self::ESTATE),
+                x if x == CmdReturnCode::INCOMPLETE as u64 => Ok(Self::INCOMPLETE),
+                x if x == CmdReturnCode::EUNKN as u64 => Ok(Self::EUNKN),
+                x if x == CmdReturnCode::EDEV as u64 => Ok(Self::EDEV),
+                _ => Err(())
+            }
+        }
+    }
+
+    #[repr(u64)]
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum CmdResp {
+        ACCEPT = 0u64,
+        REJECT = 1u64,
+    }
+
+    impl TryFrom<u64> for CmdResp {
+        type Error = ();
+
+        fn try_from(val: u64) -> core::result::Result<Self, Self::Error> {
+            match val {
+                x if x == Self::ACCEPT as u64 => Ok(Self::ACCEPT),
+                x if x == Self::REJECT as u64 => Ok(Self::REJECT),
+                _ => Err(())
+            }
+        }
+    }
 
     pub const RSI_HOST_CALL_FID: u32 = 0xC4000199;
     #[repr(C, align(256))]
@@ -150,6 +200,70 @@ pub mod rsi {
                     in("x1") ipa_rhc,
                     lateout("x0") _res,);
             }
+        }
+    }
+
+    #[repr(u8)]
+    enum RipasType {
+        EMPTY = 0x0,
+        RAM   = 0x1,
+        DESTROYED = 0x2,
+        DEV   = 0x3
+    }
+
+    pub(self) const RSI_RIPAS_STATE_SET_FID: u32 = 0xC4000197;
+    #[repr(C, align(256))]
+    pub struct RipasStateReq {
+        pub(self) fid: u64,
+        pub(self) base: u64,
+        pub(self) top: u64,
+        pub(self) ripas: u64,
+        pub(self) flags: u64
+    }
+
+    impl RipasStateReq {
+        fn new(gpa_addres: u64, n2mbpages: u64, ripas_value: RipasType) -> Self {
+            let target_top = gpa_addres + n2mbpages * MemoryDef::TWO_MB;
+            Self {
+                fid: RSI_RIPAS_STATE_SET_FID as u64,
+                base: gpa_addres,
+                top: target_top,
+                ripas: (ripas_value as u8) as u64,
+                flags: 0u64, //RSI_NO_CHANGE_DESTROYED
+            }
+        }
+
+        pub fn set(gpa_addres: u64, n2mbpages: u64, as_prv: bool) -> Result<bool> {
+            let ripas = if as_prv {
+                RipasType::RAM
+            } else {
+                RipasType::DESTROYED
+            };
+            let req = RipasStateReq::new(gpa_addres, n2mbpages, ripas);
+            let resp: u64;
+            let res: u64;
+            let nbase: u64;
+            unsafe {
+                asm!("bl _smc_exit",
+                    in("x0") req.fid,
+                    in("x1") req.base,
+                    in("x2") req.top,
+                    in("x3") req.ripas,
+                    in("x4") req.flags,
+                    lateout("x0") res,
+                    lateout("x1") nbase,
+                    lateout("x2") resp,);
+            }
+            let res = if CmdReturnCode::try_from(res).unwrap() != CmdReturnCode::SUCCESS
+                || CmdResp::try_from(resp).unwrap() != CmdResp::ACCEPT {
+                    error!("VM: ipa_state_set failed - base:{:#x}, 2mbpages:{} - x0:{} x2:{}",
+                    gpa_addres, n2mbpages, res, resp);
+                    Err(Error::SysError(SysErr::EINVAL))
+            } else {
+                debug!("VM: ipa_state_set succed - new base:{:#x}", nbase);
+                Ok(true)
+            };
+            res
         }
     }
 }

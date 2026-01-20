@@ -724,7 +724,7 @@ dependencies = [
 [[package]]
 name = "kvm-ioctls"
 version = "0.11.0"
-source = "git+https://github.com/123abcpp/kvm-ioctls.git?branch=quark-cc#802981bf4ff6981ede866a87aba551e1200b08ee"
+source = "git+https://github.com/123abcpp/kvm-ioctls.git?branch=quark-cc#56c63963c74bf761920c2185afb211d759d5a232"
 dependencies = [
  "kvm-bindings",
  "libc",

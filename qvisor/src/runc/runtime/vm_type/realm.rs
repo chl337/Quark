@@ -542,7 +542,9 @@ impl VmType for VmCcRealm {
             .expect("VM: Failed to populate for region: Kernel");
 
         info!("VM: Populate Realm memory - Guest Heap.");
-        kvm_vm_arm_rme_populate_range(vm_fd, gh_base, size)
+        let initial_pheap = MemoryDef::GUEST_PRIVATE_INIT_HEAP_SIZE +
+            crate::qlib::kernel::arch::tee::RUNTIME_ACCEPTED_PHEAP;
+        kvm_vm_arm_rme_populate_range(vm_fd, gh_base, initial_pheap)
             .expect("VM: Failed to populate for region: Guest Heap");
 
         Ok(())

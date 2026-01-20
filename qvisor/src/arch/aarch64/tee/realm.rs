@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use kvm_bindings::{KVM_ARM_VCPU_PTRAUTH_ADDRESS, KVM_ARM_VCPU_PTRAUTH_GENERIC, KVM_ARM_VCPU_POWER_OFF};
-use kvm_ioctls::{VcpuExit, VcpuFd};
+use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 
 use crate::{qlib::{config::CCMode, self, linux_def::MemoryDef, common::Error,
             qmsg::sharepara::ShareParaPage}, arch::{ConfCompExtension,
@@ -24,8 +24,7 @@ use super::super::vcpu::kvm_vcpu::KvmAarch64Reg::{X0, X1};
 use crate::arch::vm::tee::kvm::KvmArmVcpuFeature;
 
 pub struct RealmCca<'a> {
-    /// No special KVM Exits known at the momment
-    kvm_exits_list: Option<[VcpuExit<'a>; 0]>,
+    kvm_exits_list: Option<[VcpuExit<'a>; 1]>,
     hypercalls_list: [u16; 1],
     pub cc_mode: CCMode,
     pub share_space_table_addr: Option<u64>,
@@ -39,7 +38,7 @@ impl ConfCompExtension for RealmCca<'_> {
         where Self: Sized {
         let _cc_mode = QUARK_CONFIG.lock().CCMode;
         let _self: Box<dyn ConfCompExtension> = Box::new(RealmCca{
-            kvm_exits_list: None,
+            kvm_exits_list: Some([VcpuExit::MemoryFault(0,0,true)]),
             hypercalls_list:[qlib::HYPERCALL_SHARESPACE_INIT],
             share_space_table_addr: None,
             page_allocator_addr: _page_allocator_base_addr
@@ -78,6 +77,30 @@ impl ConfCompExtension for RealmCca<'_> {
         } else {
             false
         }
+    }
+
+    fn handle_kvm_exit(&self, kvm_exit: &mut kvm_ioctls::VcpuExit, _vcpu_id: usize,
+        _vm_fd: Option<&VmFd>) -> Result<bool, Error> {
+        let mut _exit = false;
+        _exit = match kvm_exit {
+            VcpuExit::MemoryFault(_gpa, _size, _private) => {
+                let base: u64 = *_gpa;
+                let size: u64 = *_size;
+                if *_private {
+                    // The memory is already DRAM{EMPTY} - the kernel will handle the rest
+                    debug!("VMM: convert to RAM - base:{:#0x} - size:{} MB",
+                        base, size >> 20);
+                    true
+                } else {
+                    // We should never come here - something went wrong
+                    error!("VMM: unsupported MemoryFault - base:{:#0x} - size:{} MB",
+                        base, size >> 20);
+                    panic!("Bad VmExit");
+                }
+            }
+            _ => false,
+        };
+        Ok(_exit)
     }
 
     fn handle_hypercall(&self, hypercall: u16, arg0: u64, arg1: u64, arg2: u64,

@@ -54,7 +54,8 @@ use crate::GLOBAL_ALLOCATOR;
 
 use super::qlib::qmsg::sharepara::*;
 use crate::qlib::config::CCMode;
-use crate::qlib::kernel::arch::tee::{is_cc_active, is_hw_tee, get_tee_type};
+use crate::qlib::kernel::arch::tee;
+use crate::qlib::kernel::arch::tee::{is_cc_active, is_hw_tee};
 use crate::GUEST_HOST_SHARED_ALLOCATOR;
 use crate::PRIVATE_VCPU_ALLOCATOR;
 use crate::PRIVATE_VCPU_SHARED_ALLOCATOR;
@@ -475,7 +476,7 @@ impl HostAllocator {
         match mode {
             CCMode::NormalEmu | CCMode::Cca => {
                 crate::qlib::kernel::Kernel::IDENTICAL_MAPPING.store(false, Ordering::SeqCst);
-                self.SwitchToPrivateRunningHeap();
+                self.SwitchToPrivateRunningHeap(mode);
             }
             CCMode::None => {
                 self.guestPrivHeapAddr
@@ -488,23 +489,42 @@ impl HostAllocator {
         }
     }
 
-    pub fn SwitchToPrivateRunningHeap(&self) {
+    pub fn SwitchToPrivateRunningHeap(&self, mode: CCMode) {
+        let (hp_start, hp_end, filled) = match mode {
+            CCMode::TDX | CCMode::SevSnp | CCMode::NormalEmu => {
+                let (end, filled) = if mode != CCMode::NormalEmu {
+                    (MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET
+                        + tee::RUNTIME_ACCEPTED_PHEAP, false)
+                } else {
+                    (MemoryDef::GUEST_PRIVATE_HEAP_END, true)
+                };
+                (MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
+                 end, filled)
+            },
+            #[cfg(target_arch = "aarch64")]
+            CCMode::Cca => {
+                let end = MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET
+                            + tee::RUNTIME_ACCEPTED_PHEAP;
+                (MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET, end, false)
+            },
+            _ => {
+                (MemoryDef::GUEST_PRIVATE_HEAP_OFFSET,
+                 MemoryDef::GUEST_PRIVATE_HEAP_END, true)
+            },
+        };
         self.guestPrivHeapAddr.store(
-            MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
+            hp_start,
             Ordering::SeqCst,
         );
-        let init_set_prv_range = 176 * MemoryDef::ONE_MB;
-        let endph = MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET
-            + init_set_prv_range;
         *self.GuestPrivateAllocator() = ListAllocator::New(
-            MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET,
-            endph,
-            false
+            hp_start,
+            hp_end,
+            filled
         );
         let size = core::mem::size_of::<ListAllocator>();
         self.GuestPrivateAllocator().Add(
-            MemoryDef::GUEST_PRIVATE_RUNNING_HEAP_OFFSET as usize + size,
-            init_set_prv_range as usize - size,
+            hp_start as usize + size,
+            (hp_end - hp_start) as usize - size,
         );
     }
 
@@ -517,12 +537,14 @@ impl HostAllocator {
                 self.sharedHeapAddr
                     .store(MemoryDef::GUEST_HOST_SHARED_HEAP_OFFSET, Ordering::SeqCst);
                 let sharedHeapStart = self.sharedHeapAddr.load(Ordering::Relaxed);
-                let (npages_2mb, filled) = if is_hw_tee() && get_tee_type() != CCMode::Cca {
-                    (96u64, false)
-                } else {
-                    ((MemoryDef::GUEST_HOST_SHARED_HEAP_SIZE / MemoryDef::TWO_MB) as u64, true)
+                let (accepted_sheap, filled) = match mode {
+                        #[cfg(target_arch = "x86_64")]
+                        CCMode::TDX | CCMode::SevSnp =>
+                            (tee::RUNTIME_ACCEPTED_SHEAP, false),
+                        _ =>
+                            (MemoryDef::GUEST_HOST_SHARED_HEAP_SIZE, true),
                 };
-                let sharedHeapEnd = sharedHeapStart + (MemoryDef::TWO_MB * npages_2mb);
+                let sharedHeapEnd = sharedHeapStart + accepted_sheap;
                 *self.GuestHostSharedAllocator() =
                     ListAllocator::New(sharedHeapStart as _, sharedHeapEnd, filled);
 
@@ -543,7 +565,7 @@ impl HostAllocator {
                 let size = 4 * MemoryDef::PAGE_SIZE as usize;
                 self.GuestHostSharedAllocator().Add(
                     MemoryDef::GUEST_HOST_SHARED_HEAP_OFFSET as usize + size,
-                    (MemoryDef::TWO_MB * npages_2mb) as usize - size,
+                    (accepted_sheap) as usize - size,
                 );
             }
         };

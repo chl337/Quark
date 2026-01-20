@@ -196,6 +196,14 @@ lazy_static! {
         QRwLock::new(0x0000_0000_0000_0000)];
 }
 
+#[cfg(target_arch = "aarch64")]
+pub const RUNTIME_ACCEPTED_PHEAP: u64 = 16 * MemoryDef::ONE_MB;
+#[cfg(target_arch = "x86_64")]
+pub const RUNTIME_ACCEPTED_PHEAP: u64 = 176 * MemoryDef::ONE_MB;
+#[cfg(target_arch = "x86_64")]
+pub const RUNTIME_ACCEPTED_SHEAP: u64 = 192 * MemoryDef::ONE_MB;
+
+
 const CONVERT_GPA_AREAS: [GpaArea; 3] = [
     GpaArea::FlMap(MemoryDef::FILE_MAP_OFFSET, MemoryDef::FILE_MAP_SIZE),
     GpaArea::PrvHeap(MemoryDef::GUEST_PRIVATE_INIT_HEAP_OFFSET,

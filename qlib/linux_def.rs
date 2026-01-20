@@ -3068,6 +3068,7 @@ impl MemoryDef {
 
 #[cfg(target_arch = "aarch64")]
 impl MemoryDef {
+    pub const GUEST_PRIVATE_INIT_HEAP_SIZE: u64 = 48 * Self::ONE_MB;
     pub const USER_UPPER_ADDR: u64 = Self::HYPERCALL_MMIO_BASE;
     //
     // Page not backed up by guest physical frame, access causes KVM_EXIT_MMIO.
@@ -3092,13 +3093,18 @@ impl MemoryDef {
         Self::GUEST_HOST_SHARED_HEAP_OFFSET + Self::GUEST_HOST_SHARED_HEAP_SIZE;
     pub const UNIDENTICAL_MAPPING_OFFSET: u64 = 30 * Self::ONE_GB;
     pub const GUEST_PRIVATE_INIT_HEAP_OFFSET: u64 = Self::HEAP_OFFSET;
-    pub const GUEST_PRIVATE_INIT_HEAP_SIZE: u64 = 1 * Self::ONE_GB;
+
     pub const GUEST_PRIVATE_INIT_HEAP_END: u64 =
         Self::GUEST_PRIVATE_INIT_HEAP_OFFSET + Self::GUEST_PRIVATE_INIT_HEAP_SIZE;
     pub const GUEST_PRIVATE_RUNNING_HEAP_OFFSET: u64 = Self::GUEST_PRIVATE_INIT_HEAP_END;
     pub const GUEST_PRIVATE_RUNNING_HEAP_SIZE: u64 =
         Self::GUEST_PRIVATE_HEAP_SIZE - Self::GUEST_PRIVATE_INIT_HEAP_SIZE;
     pub const GUEST_PRIVATE_RUNNING_HEAP_END: u64 = Self::GUEST_PRIVATE_HEAP_END;
+}
+
+#[cfg(target_arch = "x86_64")]
+impl MemoryDef {
+    pub const GUEST_PRIVATE_INIT_HEAP_SIZE: u64 = 1 * Self::ONE_GB;
 }
 
 #[cfg(feature = "tdx")]

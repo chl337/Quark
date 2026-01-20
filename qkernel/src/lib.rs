@@ -708,7 +708,7 @@ pub extern "C" fn rust_main(
                     {
                         let _ret = pvalidate(VirtAddr::new(i), PvalidateSize::Size2M, true);
                     }
-                    GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap();
+                    GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap(mode);
                     unsafe {
                         KERNEL_PAGETABLE
                             .Init(PageTables::Init(CurrentKernelTable() & 0xffff_ffff_ffff));
@@ -730,7 +730,7 @@ pub extern "C" fn rust_main(
             },
             #[cfg(feature = "tdx")]
             CCMode::TDX => {
-                GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap();
+                GLOBAL_ALLOCATOR.SwitchToPrivateRunningHeap(mode);
                 unsafe {
                     KERNEL_PAGETABLE.Init(PageTables::Init(CurrentKernelTable()));
                     init_gdt(id);
